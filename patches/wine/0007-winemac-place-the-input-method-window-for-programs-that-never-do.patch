@@ -81,7 +81,7 @@ index e2f8d7b209..d397ed300c 100644
  bool use_gcmouse = true;
 +/* Input method window position, in points from the content's bottom-left, for programs that never place it. */
 +bool use_ime_fallback_position = true;
-+int ime_fallback_x = 40, ime_fallback_y = 90;
++int ime_fallback_x = 70, ime_fallback_y = 205;
  int gl_surface_mode = GL_SURFACE_IN_FRONT_OPAQUE;
  bool retina_enabled = false;
  bool enable_app_nap = false;
