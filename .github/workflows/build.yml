@@ -14,11 +14,11 @@ on:
     inputs:
       wine_ref:
         description: athei/wine full commit SHA (or branch) to build
-        default: e2e42653b41e48fc7a6ed00569d3aaea9719ed5b
+        default: d57b522eea5578ea7dcedd2b71bcba3657749e5e
         type: string
       wine_build_ref:
         description: athei/wine-build full commit SHA (or branch) whose scripts build it
-        default: c0e75582530cf7008dd998a54960748a036281c6
+        default: bea504916e4ffb2a33a863967a85471d09150ed8
         type: string
       fex_ref:
         description: athei/FEX full commit SHA, written to pins/fex-src.ref
@@ -30,7 +30,7 @@ on:
         type: string
       loader_release:
         description: athei/wine-build release whose signed wine.app is bundled
-        default: arm64-11.19-1
+        default: arm64-11.19-2
         type: string
 
 permissions:
@@ -51,7 +51,7 @@ env:
 
 jobs:
   build:
-    # macOS 27 with its SDK, which the arm64-11.19-1 bundle was built with.
+    # macOS 27 with its SDK, which the arm64-11.19 bundles were built with.
     runs-on: xcode-27
     timeout-minutes: 345
     steps:
@@ -134,6 +134,8 @@ jobs:
         with:
           path: root/build/dxmt/llvm15
           key: dxmt-llvm15-${{ hashFiles('root/scripts/pins/redist.env') }}-xcode27
+          # Any LLVM 15 will do: build-dxmt.sh rebuilds it unless its COMMIT is the pin.
+          restore-keys: dxmt-llvm15-
       - name: build-wine.sh
         run: root/scripts/bin/build-wine.sh
       - name: Save LLVM 15 for DXMT

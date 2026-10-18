@@ -73,13 +73,13 @@ jobs:
       - name: Bundle
         working-directory: app
         run: |
-          make bundle APP_NAME=WoWSilicon-arm64 \
+          make bundle \
             WINE_RUNTIME_DIR="$RUNNER_TEMP/wine/wine" \
             ICON_SRC="$GITHUB_WORKSPACE/ci/app/icon.png"
       - name: Check the bundle
         working-directory: app
         run: |
-          app=.build/WoWSilicon-arm64.app
+          app=.build/WoWSilicon.app
           codesign --verify --strict --verbose "$app"
           codesign --verify --strict --verbose "$app/Contents/Resources/Wine/lib/wine/aarch64-unix/wine.app"
           test "$(readlink "$app/Contents/Resources/Wine")" = steamapps/common/Wine
@@ -87,14 +87,14 @@ jobs:
           tools/wine-runtime/validate.sh --runtime "$app/Contents/Resources/steamapps/common/Wine"
       - name: Package
         run: |
-          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' app/.build/WoWSilicon-arm64.app/Contents/Info.plist)
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' app/.build/WoWSilicon.app/Contents/Info.plist)
           name="app-wowsilicon-arm64-$version-$(git -C ci rev-parse --short HEAD)"
           {
             echo "app: WoWSilicon/WoWSilicon@$(git -C app rev-parse HEAD) + $(ls ci/patches/app | tr '\n' ' ')"
             echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
             sed 's/^/wine bundle: /' "$RUNNER_TEMP/wine/wine/BUILD-INFO.txt"
           } | tee app/.build/BUILD-INFO.txt
-          tar -C app/.build -cJf "$name.tar.xz" WoWSilicon-arm64.app BUILD-INFO.txt
+          tar -C app/.build -cJf "$name.tar.xz" WoWSilicon.app BUILD-INFO.txt
           shasum -a 256 "$name.tar.xz" | tee "$name.tar.xz.sha256"
           echo "NAME=$name" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4

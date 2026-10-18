@@ -36,11 +36,10 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   path contains `steamapps/common` for a game; signs the app without
   `--deep`, which would re-sign `wine.app` and drop its entitlements; and
   makes `tools/wine-runtime/validate.sh` check an arm64 bundle.
-- `0002` makes it `WoWSilicon arm64` (`io.github.mybaixinyu.wowsilicon-arm64`)
-  beside the official app: its settings live in `Application Support/WoWSilicon-arm64`,
-  its default bottle is `~/WoWSilicon-arm64`, Wine is told where its audio
-  control files are, and it has no update feed, so Sparkle never replaces it
-  with the official build.
+- `0002` removes the update feed, so Sparkle never replaces it with the
+  official build. Otherwise it is WoWSilicon, in place of the official app:
+  the same name, bundle identifier, settings and default bottle
+  (`~/WoWSilicon`), which has to be a prefix of this Wine.
 
 x87 needs no app setting: FEX runs the game's x87 code, and the Rosetta x87
 paths the app passes are ignored by this Wine.
@@ -72,7 +71,7 @@ gh workflow run build.yml --repo mybaixinyu/wowsilicon-arm64
 gh workflow run app.yml --repo mybaixinyu/wowsilicon-arm64 -f wine_run_id=<build.yml run>
 ```
 
-The inputs default to what `arm64-11.19-1` was built from. The artifacts are
+The inputs default to what `arm64-11.19-2` was built from. The artifacts are
 `wowsilicon-arm64-<describe>.tar.xz`, a `wine/` tree with `BUILD-INFO.txt`,
-and `app-wowsilicon-arm64-<version>-<commit>.tar.xz`, `WoWSilicon-arm64.app`
+and `app-wowsilicon-arm64-<version>-<commit>.tar.xz`, `WoWSilicon.app`
 with `BUILD-INFO.txt`.
