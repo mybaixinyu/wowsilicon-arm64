@@ -70,10 +70,10 @@ jobs:
       # was built.
       - name: Prepare the sources
         run: |
-          for p in ci/patches/wine-build/*.patch; do git -C root/scripts apply --verbose "$p"; done
+          for p in "$GITHUB_WORKSPACE"/ci/patches/wine-build/*.patch; do git -C root/scripts apply --verbose "$p"; done
           echo "${{ inputs.fex_ref }}" > root/scripts/pins/fex-src.ref
           echo "${{ inputs.mesa_ref }}" > root/scripts/pins/mesa-src.ref
-          for p in ci/patches/wine/*.patch; do
+          for p in "$GITHUB_WORKSPACE"/ci/patches/wine/*.patch; do
             git -C root/src apply --verbose "$p"
             git -C root/src add -A
             git -C root/src -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
