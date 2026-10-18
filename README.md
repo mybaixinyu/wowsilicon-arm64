@@ -60,8 +60,9 @@ Wine of another version needs a release of that version.
 ## Patches
 
 `patches/wine` are WoWSilicon's patches (`WoWSilicon/WoWSilicon`,
-`Packaging/WineRuntime/patches/`) rebased onto `athei/wine`; the list, and the
-ones left out and why, is in
+`Packaging/WineRuntime/patches/`) rebased onto `athei/wine`, and two of
+wine-arm64-ci's own (`0007`, `0008`); the list, and the ones left out and
+why, is in
 [wine-arm64-ci](https://github.com/mybaixinyu/wine-arm64-ci#patches).
 
 ## Run
