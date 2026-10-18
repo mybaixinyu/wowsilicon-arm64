@@ -39,6 +39,14 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   official build. Otherwise it is WoWSilicon, in place of the official app:
   the same name, bundle identifier, settings and default bottle
   (`~/WoWSilicon`), which has to be a prefix of this Wine.
+- `0003` starts Wine through `Contents/MacOS/wowsilicon-launch`, which
+  disclaims responsibility and execs it. Started by WoWSilicon directly, the
+  game is attributed to WoWSilicon, which is in the background while the game
+  plays, and ran its main thread about 7 % slower (135 against 145 fps at
+  one spot, the main thread saturated instead of at 89 %).
+- `0004` drops `LSApplicationCategoryType` (games), by which Game Mode took
+  the launcher itself for a game. The game is still one: `wine.app`
+  declares `LSSupportsGameMode`.
 
 x87 needs no app setting: FEX runs the game's x87 code, and the Rosetta x87
 paths the app passes are ignored by this Wine.

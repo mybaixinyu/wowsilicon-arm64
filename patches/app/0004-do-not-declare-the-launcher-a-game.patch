@@ -1,0 +1,13 @@
+diff --git a/Packaging/Info.plist b/Packaging/Info.plist
+index 8231d77..b00c09a 100644
+--- a/Packaging/Info.plist
++++ b/Packaging/Info.plist
+@@ -24,8 +24,6 @@
+ 	<string>????</string>
+ 	<key>CFBundleVersion</key>
+ 	<string>30202</string>
+-	<key>LSApplicationCategoryType</key>
+-	<string>public.app-category.games</string>
+ 	<key>LSMinimumSystemVersion</key>
+ 	<string>14.0</string>
+ </dict>
