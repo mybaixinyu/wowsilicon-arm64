@@ -48,6 +48,10 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
 - `0004` drops `LSApplicationCategoryType` (games), by which Game Mode took
   the launcher itself for a game. The game is still one: `wine.app`
   declares `LSSupportsGameMode`.
+- `0005` polls for Wine processes every 10 seconds while a game runs instead
+  of every 2. Each poll runs `ps` over every process and parses its output,
+  about 70 ms of CPU, which showed as WoWSilicon at 5–27 % beside the game.
+  The game's exit refreshes the count at once instead.
 
 The app leaves out what only building against Wine or testing it needs:
 `include`, the import and static libraries, the SDK tools in `bin`, the man

@@ -1,0 +1,46 @@
+diff --git a/Sources/WoWSiliconSwift/ViewModels/MainDashboardViewModel.swift b/Sources/WoWSiliconSwift/ViewModels/MainDashboardViewModel.swift
+index ac5b62b..f94c405 100644
+--- a/Sources/WoWSiliconSwift/ViewModels/MainDashboardViewModel.swift
++++ b/Sources/WoWSiliconSwift/ViewModels/MainDashboardViewModel.swift
+@@ -342,7 +342,8 @@ final class MainDashboardViewModel: ObservableObject {
+         if isLaunchOrShutdownActive {
+             return 1
+         }
+-        return processCount > 0 ? 2 : 10
++        // Each poll runs ps over every process; a launched game's exit is reported by installLaunchTerminationHandler.
++        return 10
+     }
+ 
+     private var isWineProcessPollingActive: Bool {
+@@ -735,6 +736,18 @@ final class MainDashboardViewModel: ObservableObject {
+         launchService.processDidTerminate = { [weak self] in
+             guard let self else { return }
+             self.refreshSnapshot()
++            self.refreshWineProcessCount()
++        }
++    }
++
++    private func refreshWineProcessCount() {
++        Task { [weak self] in
++            let processCount = await Task.detached(priority: .utility) {
++                WineProcessMonitor.currentApplicationProcessCount()
++            }.value
++            guard let self, !self.isForceQuittingWine, !self.isAudioOutputBusy, let processCount else { return }
++            self.wineProcessCount = processCount
++            TelemetryService.shared.updateGameRunning(processCount > 0)
+         }
+     }
+ 
+diff --git a/Tests/WoWSiliconSwiftTests/MainDashboardViewModelTests.swift b/Tests/WoWSiliconSwiftTests/MainDashboardViewModelTests.swift
+index 446a51d..94d6153 100644
+--- a/Tests/WoWSiliconSwiftTests/MainDashboardViewModelTests.swift
++++ b/Tests/WoWSiliconSwiftTests/MainDashboardViewModelTests.swift
+@@ -16,7 +16,7 @@ final class MainDashboardViewModelTests: XCTestCase {
+                 processCount: 1,
+                 isLaunchOrShutdownActive: false
+             ),
+-            2
++            10
+         )
+         XCTAssertEqual(
+             MainDashboardViewModel.wineProcessPollingIntervalSeconds(
