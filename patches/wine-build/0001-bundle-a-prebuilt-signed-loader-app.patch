@@ -1,0 +1,136 @@
+diff --git a/bin/bundle-wine.sh b/bin/bundle-wine.sh
+index 1eb1862..ea0ef3d 100755
+--- a/bin/bundle-wine.sh
++++ b/bin/bundle-wine.sh
+@@ -26,6 +26,12 @@ case "$LOADER_TIMESTAMP" in
+     0|1) ;;
+     *) echo "Error: LOADER_TIMESTAMP must be 0 or 1, not '$LOADER_TIMESTAMP'"; exit 1 ;;
+ esac
++# A wine.app already signed by the profile's team, to bundle instead of
++# signing the loader, for a build without that team's identity. It has to
++# come from a bundle of the same loader source: package_loader compares the
++# loader this build made with the app's, section by section, and refuses a
++# difference. Its signature then carries over unchanged.
++LOADER_APP="${LOADER_APP:-}"
+ 
+ # `make install` may rebuild any stale targets, including PE modules that need mingw.
+ if [ -d "$MINGW_DIR/bin" ]; then
+@@ -983,6 +989,10 @@ check_dxmt_build() {
+ # costs nothing.
+ loader_preflight() {
+     local expires now appid certs cert i id
++    if [ -n "$LOADER_APP" ]; then
++        loader_preflight_prebuilt
++        return
++    fi
+     if [ ! -f "$LOADER_PROFILE" ]; then
+         echo "Error: no provisioning profile at $LOADER_PROFILE"
+         exit 1
+@@ -1050,6 +1060,96 @@ loader_preflight() {
+     echo "  Loader: $LOADER_BUNDLE_ID, signed by $LOADER_IDENTITY_NAME (profile expires $expires)."
+ }
+ 
++# loader_preflight_prebuilt: loader_preflight for LOADER_APP. The profile is
++# the one embedded in the app, the identity the one that signed it, and
++# LOADER_TIMESTAMP follows whether that signature has a secure timestamp, so
++# check_loader_app holds the app to what it actually carries.
++loader_preflight_prebuilt() {
++    local info expires now appid
++    if [ ! -x "$LOADER_APP/Contents/MacOS/wine" ]; then
++        echo "Error: LOADER_APP=$LOADER_APP is not a wine.app with a loader"
++        exit 1
++    fi
++    if ! codesign --verify --strict "$LOADER_APP" 2>"$TMP_DIR/codesign.log"; then
++        echo "Error: LOADER_APP=$LOADER_APP does not verify:"
++        cat "$TMP_DIR/codesign.log"
++        exit 1
++    fi
++    LOADER_PROFILE="$LOADER_APP/Contents/embedded.provisionprofile"
++    LOADER_PLIST="$TMP_DIR/loader-profile.plist"
++    security cms -D -i "$LOADER_PROFILE" > "$LOADER_PLIST" 2>/dev/null || {
++        echo "Error: $LOADER_PROFILE is not a signed provisioning profile"
++        exit 1
++    }
++    expires=$(plutil -extract ExpirationDate raw -o - "$LOADER_PLIST" 2>/dev/null) || {
++        echo "Error: the provisioning profile has no ExpirationDate"
++        exit 1
++    }
++    now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
++    if [[ "$expires" < "$now" ]]; then
++        echo "Error: the provisioning profile expired on $expires"
++        exit 1
++    fi
++    LOADER_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$LOADER_PLIST" 2>/dev/null) || {
++        echo "Error: the provisioning profile names no TeamIdentifier"
++        exit 1
++    }
++    appid=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' \
++            "$LOADER_PLIST" 2>/dev/null) || {
++        echo "Error: the provisioning profile grants no com.apple.application-identifier"
++        exit 1
++    }
++    LOADER_BUNDLE_ID=${appid#"$LOADER_TEAM".}
++    info=$(codesign -dvv "$LOADER_APP" 2>&1)
++    LOADER_IDENTITY_NAME=$(sed -n 's/^Authority=//p' <<< "$info" | head -n 1)
++    if [ -z "$LOADER_IDENTITY_NAME" ] || ! grep -qxF "TeamIdentifier=$LOADER_TEAM" <<< "$info"; then
++        echo "Error: LOADER_APP=$LOADER_APP is not signed by a certificate of team $LOADER_TEAM:"
++        echo "$info"
++        exit 1
++    fi
++    if grep -q '^Timestamp=' <<< "$info"; then LOADER_TIMESTAMP=1; else LOADER_TIMESTAMP=0; fi
++    echo "  Loader: $LOADER_BUNDLE_ID from $LOADER_APP, signed by $LOADER_IDENTITY_NAME (profile expires $expires)."
++}
++
++# loader_layout <macho>: the segments of <macho> without __LINKEDIT, where the
++# signature lives, and the contents of every section, as otool prints them.
++loader_layout() {
++    local seg sect
++    otool -l "$1" | awk '/^ *cmd LC_SEGMENT_64$/ { seg = 1; next }
++        seg && /^ *segname / { name = $2; if (name == "__LINKEDIT") seg = 0; next }
++        seg && /^ *(vmaddr|vmsize|maxprot|initprot) / { print name, $1, $2; next }
++        /^ *cmd / { seg = 0 }'
++    otool -l "$1" | awk '/^ *sectname / { sect = $2 } /^ *segname / && sect != "" { print $2, sect; sect = "" }' |
++        while read -r seg sect; do
++            echo "== $seg,$sect"
++            otool -X -s "$seg" "$sect" "$1"
++        done
++}
++
++# package_prebuilt_loader: package_loader for LOADER_APP. The loader `make
++# install` left is compared with the app's and then replaced by the app.
++package_prebuilt_loader() {
++    local app="$unixdir/wine.app"
++    if [ ! -f "$unixdir/wine" ] || [ -L "$unixdir/wine" ]; then
++        echo "Error: no loader binary at $UNIX_DIR/wine"
++        exit 1
++    fi
++    loader_layout "$unixdir/wine" > "$TMP_DIR/loader-built.txt"
++    loader_layout "$LOADER_APP/Contents/MacOS/wine" > "$TMP_DIR/loader-app.txt"
++    if ! cmp -s "$TMP_DIR/loader-built.txt" "$TMP_DIR/loader-app.txt"; then
++        echo "Error: the loader this build made is not the one in LOADER_APP=$LOADER_APP:"
++        diff "$TMP_DIR/loader-built.txt" "$TMP_DIR/loader-app.txt" | head -n 40 | sed 's/^/    /'
++        exit 1
++    fi
++    echo "    the built loader matches $LOADER_APP section by section"
++    rm "$unixdir/wine"
++    ditto "$LOADER_APP" "$app"
++    ln -s wine.app/Contents/MacOS/wine "$unixdir/wine"
++    rm -f "$WINE_DIR/bin/wine"
++    ln -s "../lib/wine/$UNIX_DIR/wine.app/Contents/MacOS/wine" "$WINE_DIR/bin/wine"
++    echo "    wine.app ($LOADER_BUNDLE_ID), signature carried over"
++}
++
+ # The entitlements the loader claims on top of the profile's, for the hardened
+ # runtime, which notarization and Mach9's install verification require. Each
+ # lifts a restriction of the runtime that Wine runs into:
+@@ -1096,6 +1196,10 @@ com.apple.security.device.audio-input"
+ # secure timestamp from Apple's server.
+ package_loader() {
+     local app="$unixdir/wine.app" ents="$TMP_DIR/loader-entitlements.plist" version key
++    if [ -n "$LOADER_APP" ]; then
++        package_prebuilt_loader
++        return
++    fi
+     if [ ! -f "$unixdir/wine" ] || [ -L "$unixdir/wine" ]; then
+         echo "Error: no loader binary at $UNIX_DIR/wine"
+         exit 1
