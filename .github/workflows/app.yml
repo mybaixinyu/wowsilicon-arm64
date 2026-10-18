@@ -62,6 +62,19 @@ jobs:
           shasum -a 256 -c ./*.tar.xz.sha256
           tar -xJf ./*.tar.xz
           cat wine/BUILD-INFO.txt
+      # The app carries what runs games; headers, import and static libraries,
+      # the SDK tools, man pages and Wine's graphics tests stay in the bundle
+      # artifact.
+      - name: Drop what only building against Wine or testing it needs
+        run: |
+          w="$RUNNER_TEMP/wine/wine"
+          du -sh "$w"
+          rm -rf "$w/include" "$w/lib/wine/tests" "$w/share/man"
+          find "$w/lib" -name '*.a' -type f -delete
+          for tool in function_grep.pl widl winebuild winecpp winedump wineg++ winegcc winemaker wmc wrc; do
+            rm "$w/bin/$tool"
+          done
+          du -sh "$w"
       # The Makefile's audio helper compiler.
       - name: Toolchain
         run: |

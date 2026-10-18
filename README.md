@@ -49,6 +49,10 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   the launcher itself for a game. The game is still one: `wine.app`
   declares `LSSupportsGameMode`.
 
+The app leaves out what only building against Wine or testing it needs:
+`include`, the import and static libraries, the SDK tools in `bin`, the man
+pages and `lib/wine/tests`, about 150 MB. The bundle artifact keeps them.
+
 x87 needs no app setting: FEX runs the game's x87 code, and the Rosetta x87
 paths the app passes are ignored by this Wine.
 
