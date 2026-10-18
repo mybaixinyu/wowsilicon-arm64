@@ -51,14 +51,14 @@ index 9dec554..dc1a83c 100644
  	fi
  	@echo "Bundle created at $(APP_BUNDLE)"
 diff --git a/Sources/WoWSiliconSwift/Services/BundledWineRuntime.swift b/Sources/WoWSiliconSwift/Services/BundledWineRuntime.swift
-index 609f360..f6cee5e 100644
+index 609f360..9f98e82 100644
 --- a/Sources/WoWSiliconSwift/Services/BundledWineRuntime.swift
 +++ b/Sources/WoWSiliconSwift/Services/BundledWineRuntime.swift
 @@ -43,6 +43,18 @@ enum BundledWineRuntime {
          return fileManager.isExecutableFile(atPath: executableURL.path) ? executableURL : nil
      }
  
-+    /// wowsilicon-launch in Contents/MacOS, which starts Wine as its own responsible process.
++    /// wowsilicon-launch in Contents/MacOS, which starts Wine as its own application.
 +    static func launchHelperURL(
 +        bundle: Bundle = .main,
 +        fileManager: FileManager = .default
@@ -74,7 +74,7 @@ index 609f360..f6cee5e 100644
          resourceURL: URL? = Bundle.main.resourceURL,
          environment: [String: String] = ProcessInfo.processInfo.environment
 diff --git a/Sources/WoWSiliconSwift/Services/LaunchService.swift b/Sources/WoWSiliconSwift/Services/LaunchService.swift
-index c0abfee..dcfb21f 100644
+index c0abfee..46d6b3f 100644
 --- a/Sources/WoWSiliconSwift/Services/LaunchService.swift
 +++ b/Sources/WoWSiliconSwift/Services/LaunchService.swift
 @@ -459,7 +459,7 @@ final class LaunchService: @unchecked Sendable {
@@ -90,7 +90,7 @@ index c0abfee..dcfb21f 100644
          }
      }
  
-+    // Without the helper the game runs as part of WoWSilicon, which macOS runs slower in the background.
++    // Without the helper Wine inherits WoWSilicon's __CFBundleIdentifier, and WoW runs about 7 % slower.
 +    private func launchHelperPrefix() -> String {
 +        BundledWineRuntime.launchHelperURL().map { shellQuote($0.path) + " " } ?? ""
 +    }
@@ -109,17 +109,18 @@ index c0abfee..dcfb21f 100644
          let spatialAudioMode = version.settings.spatializeStereo ? "fixed" : "off"
 diff --git a/tools/wowsilicon-launch/wowsilicon-launch.c b/tools/wowsilicon-launch/wowsilicon-launch.c
 new file mode 100644
-index 0000000..670391e
+index 0000000..b4a2bb4
 --- /dev/null
 +++ b/tools/wowsilicon-launch/wowsilicon-launch.c
-@@ -0,0 +1,32 @@
-+/* Runs a program in place of this process as its own responsible process.
-+ * A game started by WoWSilicon is otherwise attributed to WoWSilicon, which
-+ * sits in the background while the game plays, and macOS runs the game's
-+ * threads slower than when the game is its own responsible process. */
+@@ -0,0 +1,35 @@
++/* Runs a program in place of this process as its own application: without
++ * WoWSilicon's __CFBundleIdentifier, which every child of WoWSilicon inherits
++ * and which made WoW run about 7 % slower, and as its own responsible
++ * process, so macOS does not count the game as part of WoWSilicon. */
 +
 +#include <spawn.h>
 +#include <stdio.h>
++#include <stdlib.h>
 +#include <string.h>
 +
 +extern char **environ;
@@ -135,6 +136,8 @@ index 0000000..670391e
 +        fprintf(stderr, "usage: %s program [argument...]\n", argv[0]);
 +        return 2;
 +    }
++
++    unsetenv("__CFBundleIdentifier");
 +
 +    posix_spawnattr_init(&attrs);
 +    posix_spawnattr_setflags(&attrs, POSIX_SPAWN_SETEXEC);
