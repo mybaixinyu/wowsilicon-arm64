@@ -148,3 +148,60 @@ index f8b32e8..04fcc43 100644
          XCTAssertThrowsError(try TroubleshootingService.deleteWineBottle(
              bottleURL: missingBottle,
              homeDirectory: home
+diff --git a/Tests/WoWSiliconSwiftTests/UserPrefsStoreTests.swift b/Tests/WoWSiliconSwiftTests/UserPrefsStoreTests.swift
+index 05347a2..4b4f79a 100644
+--- a/Tests/WoWSiliconSwiftTests/UserPrefsStoreTests.swift
++++ b/Tests/WoWSiliconSwiftTests/UserPrefsStoreTests.swift
+@@ -28,7 +28,7 @@ final class UserPrefsStoreTests: XCTestCase {
+         let supportURL = try makeTemporaryDirectory()
+         let store = UserPrefsStore(supportDirectory: supportURL)
+         let prefs = UserPrefs.defaults
+-        let prefsURL = supportURL.appendingPathComponent("WoWSilicon/prefs.json")
++        let prefsURL = supportURL.appendingPathComponent("WoWSilicon-arm64/prefs.json")
+ 
+         store.save(prefs)
+         let originalModificationDate = Date(timeIntervalSince1970: 1_000_000)
+diff --git a/Tests/WoWSiliconSwiftTests/VersionStoreTests.swift b/Tests/WoWSiliconSwiftTests/VersionStoreTests.swift
+index ddc711f..20e7c6d 100644
+--- a/Tests/WoWSiliconSwiftTests/VersionStoreTests.swift
++++ b/Tests/WoWSiliconSwiftTests/VersionStoreTests.swift
+@@ -44,7 +44,7 @@ final class VersionStoreTests: XCTestCase {
+ 
+     func testLoadFallsBackToDefaultsWhenVersionsFileIsInvalid() throws {
+         let supportURL = try makeTemporaryDirectory()
+-        let versionsURL = supportURL.appendingPathComponent("WoWSilicon/versions.json")
++        let versionsURL = supportURL.appendingPathComponent("WoWSilicon-arm64/versions.json")
+         try FileManager.default.createDirectory(at: versionsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+         try "{ not json".write(to: versionsURL, atomically: true, encoding: .utf8)
+ 
+@@ -58,7 +58,7 @@ final class VersionStoreTests: XCTestCase {
+ 
+     func testLoadMergesLegacyVersionManagerWhenNewStoreHasNoPaths() throws {
+         let supportURL = try makeTemporaryDirectory()
+-        let legacyURL = supportURL.appendingPathComponent("WoWSilicon/version_manager.json")
++        let legacyURL = supportURL.appendingPathComponent("WoWSilicon-arm64/version_manager.json")
+         try FileManager.default.createDirectory(at: legacyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+         try """
+         {
+@@ -170,7 +170,7 @@ final class VersionStoreTests: XCTestCase {
+         let supportURL = try makeTemporaryDirectory()
+         let store = VersionStore(supportDirectory: supportURL)
+         let manager = VersionManager.makeDefault()
+-        let versionsURL = supportURL.appendingPathComponent("WoWSilicon/versions.json")
++        let versionsURL = supportURL.appendingPathComponent("WoWSilicon-arm64/versions.json")
+ 
+         try store.save(manager: manager)
+         let originalModificationDate = Date(timeIntervalSince1970: 1_000_000)
+diff --git a/Tests/WoWSiliconSwiftTests/WineBottleServiceTests.swift b/Tests/WoWSiliconSwiftTests/WineBottleServiceTests.swift
+index 36ca3ce..9b8a456 100644
+--- a/Tests/WoWSiliconSwiftTests/WineBottleServiceTests.swift
++++ b/Tests/WoWSiliconSwiftTests/WineBottleServiceTests.swift
+@@ -6,7 +6,7 @@ final class WineBottleServiceTests: XCTestCase {
+         let home = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+         XCTAssertEqual(
+             WineBottleService.defaultBottleURL(homeDirectory: home).path,
+-            "/Users/tester/WoWSilicon"
++            "/Users/tester/WoWSilicon-arm64"
+         )
+         XCTAssertEqual(
+             WineBottleService.currentBottleURL(
