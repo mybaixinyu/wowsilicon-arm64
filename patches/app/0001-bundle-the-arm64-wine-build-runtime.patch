@@ -1,22 +1,8 @@
 diff --git a/Makefile b/Makefile
-index a660ab2..57fbf38 100644
+index a660ab2..9dec554 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -94,16 +94,19 @@ bundle: build validate_wine_runtime audio_helper
- 		echo "warning: resource bundle not found at $$resource_bundle"; \
- 		rsync -a Sources/WoWSiliconSwift/Resources/ "$(APP_BUNDLE)/Contents/Resources/"; \
- 	fi
--	@mkdir -p "$(APP_BUNDLE)/Contents/Resources/Wine"
--	@cp -R "$(WINE_RUNTIME_DIR)/." "$(APP_BUNDLE)/Contents/Resources/Wine/"
-+	@# macOS Game Mode takes a process for a game when its real path contains steamapps/common.
-+	@mkdir -p "$(APP_BUNDLE)/Contents/Resources/steamapps/common/Wine"
-+	@cp -R "$(WINE_RUNTIME_DIR)/." "$(APP_BUNDLE)/Contents/Resources/steamapps/common/Wine/"
-+	@ln -s steamapps/common/Wine "$(APP_BUNDLE)/Contents/Resources/Wine"
- 	@mkdir -p "$(APP_BUNDLE)/Contents/Resources/Audio"
- 	@cp "$(AUDIO_HELPER)" "$(APP_BUNDLE)/Contents/Resources/Audio/"
--	@find "$(APP_BUNDLE)/Contents/Resources/Wine" -name '.DS_Store' -delete
-+	@find "$(APP_BUNDLE)/Contents/Resources/steamapps/common/Wine" -name '.DS_Store' -delete
- 	@cp "$(APP_ICON)" "$(APP_BUNDLE)/Contents/Resources/turtle.icns"
+@@ -103,7 +103,8 @@ bundle: build validate_wine_runtime audio_helper
  	@xattr -cr "$(APP_BUNDLE)"
  	@if [ -n "$(CODESIGN_IDENTITY)" ]; then \
  		echo "Signing $(APP_BUNDLE) with identity $(CODESIGN_IDENTITY)..."; \

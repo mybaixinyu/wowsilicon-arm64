@@ -82,9 +82,7 @@ jobs:
           app=.build/WoWSilicon.app
           codesign --verify --strict --verbose "$app"
           codesign --verify --strict --verbose "$app/Contents/Resources/Wine/lib/wine/aarch64-unix/wine.app"
-          test "$(readlink "$app/Contents/Resources/Wine")" = steamapps/common/Wine
-          # find does not descend into a symlink named as its start point.
-          tools/wine-runtime/validate.sh --runtime "$app/Contents/Resources/steamapps/common/Wine"
+          tools/wine-runtime/validate.sh --runtime "$app/Contents/Resources/Wine"
       - name: Package
         run: |
           version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' app/.build/WoWSilicon.app/Contents/Info.plist)

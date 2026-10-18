@@ -31,11 +31,10 @@ faulted on it.
 naming an earlier run) builds `WoWSilicon/WoWSilicon` at v3.2.2 through its
 own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
 
-- `0001` puts the bundle in `Contents/Resources/steamapps/common/Wine`, with
-  `Wine` linking to it, since macOS Game Mode takes a process whose real
-  path contains `steamapps/common` for a game; signs the app without
-  `--deep`, which would re-sign `wine.app` and drop its entitlements; and
-  makes `tools/wine-runtime/validate.sh` check an arm64 bundle.
+- `0001` signs the app without `--deep`, which would re-sign `wine.app` and
+  drop its entitlements, and makes `tools/wine-runtime/validate.sh` check an
+  arm64 bundle. Game Mode needs nothing from the app: `wine.app` declares
+  `LSSupportsGameMode`.
 - `0002` removes the update feed, so Sparkle never replaces it with the
   official build. Otherwise it is WoWSilicon, in place of the official app:
   the same name, bundle identifier, settings and default bottle
