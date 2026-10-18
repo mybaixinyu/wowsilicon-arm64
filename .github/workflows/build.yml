@@ -125,8 +125,14 @@ jobs:
         with:
           path: root/build/dxmt/llvm15
           key: dxmt-llvm15-${{ hashFiles('root/scripts/pins/redist.env') }}-xcode27
+      # The runner's paravirtual GPU cannot create a KosmicKrisp Vulkan
+      # instance (vkCreateInstance returns VK_ERROR_INITIALIZATION_FAILED), so
+      # the GPU smoke checks are left to a real Mac; the full bundle carries
+      # Wine's graphics tests for that.
       - name: bundle-wine.sh
-        run: root/scripts/bin/bundle-wine.sh --runtime-only --yes
+        env:
+          SMOKE_SKIP_GPU: "1"
+        run: root/scripts/bin/bundle-wine.sh --yes
       - name: Package
         run: |
           name="wowsilicon-arm64-$(git -C root/src describe --tags --always)"

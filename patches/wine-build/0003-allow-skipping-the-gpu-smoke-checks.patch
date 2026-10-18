@@ -1,0 +1,19 @@
+diff --git a/bin/bundle-wine.sh b/bin/bundle-wine.sh
+index 5acb478..4fda74f 100755
+--- a/bin/bundle-wine.sh
++++ b/bin/bundle-wine.sh
+@@ -599,8 +599,12 @@ smoke_test() {
+     check_tree_loads i686 "${wine_env[@]}"
+     # --compatdb-only has already refused a bundle without Vulkan
+     # (check_vulkan_present), so every bundle that gets here has it.
+-    check_vulkan_runs "${wine_env[@]}"
+-    check_wined3d_device "${wine_env[@]}"
++    if [ "${SMOKE_SKIP_GPU:-0}" = 1 ]; then
++        echo "  SMOKE_SKIP_GPU=1: not creating a Vulkan instance or a wined3d device."
++    else
++        check_vulkan_runs "${wine_env[@]}"
++        check_wined3d_device "${wine_env[@]}"
++    fi
+     smoke_stop
+     echo "  Programs for $SMOKE_PE_ARCHS run; the x86 ones load their Direct3D trees."
+ }
