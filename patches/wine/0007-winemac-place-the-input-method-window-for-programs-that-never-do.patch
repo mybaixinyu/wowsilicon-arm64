@@ -1,0 +1,112 @@
+diff --git a/dlls/winemac.drv/cocoa_window.m b/dlls/winemac.drv/cocoa_window.m
+index 1465012877..192d23428c 100644
+--- a/dlls/winemac.drv/cocoa_window.m
++++ b/dlls/winemac.drv/cocoa_window.m
+@@ -818,14 +818,22 @@ - (NSArray*) validAttributesForMarkedText
+     - (NSRect) firstRectForCharacterRange:(NSRange)aRange actualRange:(NSRangePointer)actualRange
+     {
+         NSRect ret;
++        bool placed;
+ 
+         aRange = NSIntersectionRange(aRange, NSMakeRange(0, [markedText length]));
+ 
+         pthread_mutex_lock(&ime_composition_rect_mutex);
+         ret = NSRectFromCGRect(cgrect_mac_from_win(ime_composition_rect));
++        placed = ime_composition_rect_set;
+         pthread_mutex_unlock(&ime_composition_rect_mutex);
+ 
+-        [[WineApplicationController sharedController] flipRect:&ret];
++        if (placed || !use_ime_fallback_position || ![self window])
++            [[WineApplicationController sharedController] flipRect:&ret];
++        else
++        {
++            NSRect content = [[self window] contentRectForFrameRect:[[self window] frame]];
++            ret = NSMakeRect(NSMinX(content) + ime_fallback_x, NSMinY(content) + ime_fallback_y, 0, 0);
++        }
+ 
+         if (actualRange)
+             *actualRange = aRange;
+diff --git a/dlls/winemac.drv/ime.c b/dlls/winemac.drv/ime.c
+index e22f4342e2..228fbd10ba 100644
+--- a/dlls/winemac.drv/ime.c
++++ b/dlls/winemac.drv/ime.c
+@@ -29,6 +29,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(imm);
+ 
+ pthread_mutex_t ime_composition_rect_mutex = PTHREAD_MUTEX_INITIALIZER;
+ CGRect ime_composition_rect;
++bool ime_composition_rect_set;
+ 
+ 
+ /***********************************************************************
+@@ -86,6 +87,7 @@ BOOL macdrv_SetIMECompositionRect( HWND hwnd, RECT rect )
+ 
+     pthread_mutex_lock( &ime_composition_rect_mutex );
+     ime_composition_rect = cgrect_from_rect( rect );
++    ime_composition_rect_set = true;
+     pthread_mutex_unlock( &ime_composition_rect_mutex );
+ 
+     return TRUE;
+diff --git a/dlls/winemac.drv/macdrv.h b/dlls/winemac.drv/macdrv.h
+index 30ac857953..53ba599a74 100644
+--- a/dlls/winemac.drv/macdrv.h
++++ b/dlls/winemac.drv/macdrv.h
+@@ -223,6 +223,7 @@ extern BOOL macdrv_SystemParametersInfo(UINT action, UINT int_param, void *ptr_p
+ /* ime.c */
+ extern pthread_mutex_t ime_composition_rect_mutex;
+ extern CGRect ime_composition_rect;
++extern bool ime_composition_rect_set;
+ extern void macdrv_ime_set_text(HWND hwnd, CFStringRef text, bool complete,
+                                 unsigned int cursor_begin, unsigned int cursor_end, void *update);
+ 
+diff --git a/dlls/winemac.drv/macdrv_cocoa.h b/dlls/winemac.drv/macdrv_cocoa.h
+index b1f8a0ac2f..fdb5e26254 100644
+--- a/dlls/winemac.drv/macdrv_cocoa.h
++++ b/dlls/winemac.drv/macdrv_cocoa.h
+@@ -112,6 +112,8 @@
+ extern bool cursor_clipping_locks_windows;
+ extern bool use_precise_scrolling;
+ extern bool use_gcmouse;
++extern bool use_ime_fallback_position;
++extern int ime_fallback_x, ime_fallback_y;
+ extern int gl_surface_mode;
+ extern CFDictionaryRef localized_strings;
+ extern bool retina_enabled;  /* Whether Retina mode is enabled via registry setting. */
+diff --git a/dlls/winemac.drv/macdrv_main.c b/dlls/winemac.drv/macdrv_main.c
+index e2f8d7b209..d397ed300c 100644
+--- a/dlls/winemac.drv/macdrv_main.c
++++ b/dlls/winemac.drv/macdrv_main.c
+@@ -51,6 +51,9 @@ bool use_confinement_cursor_clipping = true;
+ bool cursor_clipping_locks_windows = true;
+ bool use_precise_scrolling = true;
+ bool use_gcmouse = true;
++/* Input method window position, in points from the content's bottom-left, for programs that never place it. */
++bool use_ime_fallback_position = true;
++int ime_fallback_x = 40, ime_fallback_y = 90;
+ int gl_surface_mode = GL_SURFACE_IN_FRONT_OPAQUE;
+ bool retina_enabled = false;
+ bool enable_app_nap = false;
+@@ -350,6 +353,24 @@ static void setup_options(void)
+     if (!get_config_key(hkey, appkey, "UseGCMouse", buffer, sizeof(buffer)))
+         use_gcmouse = IS_OPTION_TRUE(buffer[0]);
+ 
++    /* "x,y" moves the fallback position; anything else that is not true turns it off. */
++    if (!get_config_key(hkey, appkey, "IMEFallbackPosition", buffer, sizeof(buffer)))
++    {
++        char pos[32];
++        int i, x, y;
++
++        for (i = 0; i < ARRAY_SIZE(pos) - 1 && buffer[i]; i++) pos[i] = buffer[i] < 0x80 ? buffer[i] : '?';
++        pos[i] = 0;
++        if (sscanf(pos, "%d,%d", &x, &y) == 2)
++        {
++            use_ime_fallback_position = true;
++            ime_fallback_x = x;
++            ime_fallback_y = y;
++        }
++        else
++            use_ime_fallback_position = IS_OPTION_TRUE(buffer[0]);
++    }
++
+     if (!get_config_key(hkey, appkey, "OpenGLSurfaceMode", buffer, sizeof(buffer)))
+     {
+         static const WCHAR transparentW[] = {'t','r','a','n','s','p','a','r','e','n','t',0};
