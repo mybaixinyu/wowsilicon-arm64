@@ -1,0 +1,108 @@
+name: app
+
+# Builds WoWSilicon.app from WoWSilicon/WoWSilicon with patches/app on top,
+# through its own Makefile, around the Wine bundle build.yml made: after it
+# in the same run, or alone from an earlier run's artifact.
+on:
+  workflow_call:
+    inputs:
+      app_ref:
+        type: string
+        default: 5276d92627f26334f6580270eabadf22361d3717
+  workflow_dispatch:
+    inputs:
+      wine_run_id:
+        description: build.yml run whose Wine bundle goes into the app
+        required: true
+        type: string
+      app_ref:
+        description: WoWSilicon/WoWSilicon full commit SHA (or tag) to build
+        default: 5276d92627f26334f6580270eabadf22361d3717
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  app:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: ci
+      - uses: actions/checkout@v5
+        with:
+          repository: WoWSilicon/WoWSilicon
+          ref: ${{ inputs.app_ref }}
+          path: app
+      - name: Apply patches
+        run: for p in "$GITHUB_WORKSPACE"/ci/patches/app/*.patch; do git -C app apply --verbose "$p"; done
+      - name: Wine bundle from this run
+        if: inputs.wine_run_id == ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wowsilicon-arm64-*
+          path: ${{ runner.temp }}/wine
+          merge-multiple: true
+      - name: Wine bundle from run ${{ inputs.wine_run_id }}
+        if: inputs.wine_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wowsilicon-arm64-*
+          path: ${{ runner.temp }}/wine
+          merge-multiple: true
+          run-id: ${{ inputs.wine_run_id }}
+          github-token: ${{ github.token }}
+      - name: Unpack the Wine bundle
+        run: |
+          cd "$RUNNER_TEMP/wine"
+          ls
+          shasum -a 256 -c ./*.tar.xz.sha256
+          tar -xJf ./*.tar.xz
+          cat wine/BUILD-INFO.txt
+      # The Makefile's audio helper compiler.
+      - name: Toolchain
+        run: |
+          brew install mingw-w64
+          swift --version
+      - name: Test
+        working-directory: app
+        run: swift test
+      - name: Bundle
+        working-directory: app
+        run: |
+          make bundle APP_NAME=WoWSilicon-arm64 \
+            WINE_RUNTIME_DIR="$RUNNER_TEMP/wine/wine" \
+            ICON_SRC="$GITHUB_WORKSPACE/ci/app/icon.png"
+      - name: Check the bundle
+        working-directory: app
+        run: |
+          app=.build/WoWSilicon-arm64.app
+          codesign --verify --strict --verbose "$app"
+          codesign --verify --strict --verbose "$app/Contents/Resources/Wine/lib/wine/aarch64-unix/wine.app"
+          test "$(readlink "$app/Contents/Resources/Wine")" = steamapps/common/Wine
+          # find does not descend into a symlink named as its start point.
+          tools/wine-runtime/validate.sh --runtime "$app/Contents/Resources/steamapps/common/Wine"
+      - name: Package
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' app/.build/WoWSilicon-arm64.app/Contents/Info.plist)
+          name="app-wowsilicon-arm64-$version-$(git -C ci rev-parse --short HEAD)"
+          {
+            echo "app: WoWSilicon/WoWSilicon@$(git -C app rev-parse HEAD) + $(ls ci/patches/app | tr '\n' ' ')"
+            echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
+            sed 's/^/wine bundle: /' "$RUNNER_TEMP/wine/wine/BUILD-INFO.txt"
+          } | tee app/.build/BUILD-INFO.txt
+          tar -C app/.build -cJf "$name.tar.xz" WoWSilicon-arm64.app BUILD-INFO.txt
+          shasum -a 256 "$name.tar.xz" | tee "$name.tar.xz.sha256"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: |
+            ${{ env.NAME }}.tar.xz
+            ${{ env.NAME }}.tar.xz.sha256
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error

@@ -3,11 +3,12 @@ name: build
 # Builds the whole arm64 Wine bundle of athei/wine-build (Wine, FEX, DXMT,
 # Mesa's KosmicKrisp and the Vulkan loader, with mtld3d from its release)
 # through its own build-wine.sh and bundle-wine.sh, with patches/wine on top
-# of athei/wine. The one part this repository cannot make is the signed
-# loader app: its entitlement needs a certificate of the provisioning
-# profile's team, so wine.app comes from a wine-build release, and
-# bundle-wine.sh refuses it unless the loader this build makes is the same
-# code (patches/wine-build). Manual only.
+# of athei/wine and patches/fex on top of athei/FEX. The one part this
+# repository cannot make is the signed loader app: its entitlement needs a
+# certificate of the provisioning profile's team, so wine.app comes from a
+# wine-build release, and bundle-wine.sh refuses it unless the loader this
+# build makes is the same code (patches/wine-build). app.yml then builds
+# WoWSilicon.app around the bundle. Manual only.
 on:
   workflow_dispatch:
     inputs:
@@ -34,6 +35,8 @@ on:
 
 permissions:
   contents: read
+  # app.yml, called below, reads this run's artifact.
+  actions: read
 
 env:
   LLVM_MINGW_TAG: "20261006"
@@ -71,7 +74,21 @@ jobs:
       - name: Prepare the sources
         run: |
           for p in "$GITHUB_WORKSPACE"/ci/patches/wine-build/*.patch; do git -C root/scripts apply --verbose "$p"; done
-          echo "${{ inputs.fex_ref }}" > root/scripts/pins/fex-src.ref
+          # build-fex.sh clones FEX_REPO and checks out fex-src.ref, so the
+          # patched FEX is a local repository with one commit per patch.
+          fex="$RUNNER_TEMP/fex"
+          git init --quiet "$fex"
+          git -C "$fex" fetch --quiet --depth 1 https://github.com/athei/FEX "${{ inputs.fex_ref }}"
+          git -C "$fex" checkout --quiet FETCH_HEAD
+          for p in "$GITHUB_WORKSPACE"/ci/patches/fex/*.patch; do
+            git -C "$fex" apply --verbose "$p"
+            git -C "$fex" add -A
+            git -C "$fex" -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
+              commit --quiet -m "$(basename "$p" .patch)"
+          done
+          echo "FEX_REPO=file://$fex" >> "$GITHUB_ENV"
+          echo "FEX_BASE=$(git -C "$fex" rev-parse "HEAD~$(ls ci/patches/fex/*.patch | wc -l | tr -d ' ')")" >> "$GITHUB_ENV"
+          git -C "$fex" rev-parse HEAD > root/scripts/pins/fex-src.ref
           echo "${{ inputs.mesa_ref }}" > root/scripts/pins/mesa-src.ref
           for p in "$GITHUB_WORKSPACE"/ci/patches/wine/*.patch; do
             git -C root/src apply --verbose "$p"
@@ -139,7 +156,7 @@ jobs:
           {
             echo "wine: athei/wine@$(git -C root/src rev-parse HEAD~$(ls ci/patches/wine/*.patch | wc -l | tr -d ' ')) + $(ls ci/patches/wine | tr '\n' ' ')"
             echo "wine-build: athei/wine-build@$(git -C root/scripts rev-parse HEAD) + $(ls ci/patches/wine-build | tr '\n' ' ')"
-            echo "fex: athei/FEX@${{ inputs.fex_ref }}"
+            echo "fex: athei/FEX@$FEX_BASE + $(ls ci/patches/fex | tr '\n' ' ')"
             echo "mesa: athei/mesa@${{ inputs.mesa_ref }}"
             echo "loader: wine.app of athei/wine-build ${{ inputs.loader_release }}"
             echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
@@ -158,3 +175,6 @@ jobs:
           compression-level: 0
           retention-days: 30
           if-no-files-found: error
+  app:
+    needs: build
+    uses: ./.github/workflows/app.yml
