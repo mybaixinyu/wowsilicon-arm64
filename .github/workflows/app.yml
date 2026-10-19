@@ -99,7 +99,6 @@ jobs:
           app=.build/WoWSilicon.app
           codesign --verify --strict --verbose "$app"
           codesign --verify --strict --verbose "$app/Contents/Resources/Wine/lib/wine/aarch64-unix/wine.app"
-          test -x "$app/Contents/MacOS/wowsilicon-launch"
           ! /usr/libexec/PlistBuddy -c 'Print :LSApplicationCategoryType' "$app/Contents/Info.plist"
           tools/wine-runtime/validate.sh --runtime "$app/Contents/Resources/Wine"
       - name: Package

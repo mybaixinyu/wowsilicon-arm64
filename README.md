@@ -51,16 +51,10 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   official build. Otherwise it is WoWSilicon, in place of the official app:
   the same name, bundle identifier, settings and default bottle
   (`~/WoWSilicon`), which has to be a prefix of this Wine.
-- `0003` starts Wine through `Contents/MacOS/wowsilicon-launch`, which
-  clears `__CFBundleIdentifier` and execs Wine as its own responsible
-  process. Every child of WoWSilicon inherits WoWSilicon's
-  `__CFBundleIdentifier`, and with it WoW ran about 7 % slower: 135 against
-  145 fps at one spot, measured with WoWSilicon's whole environment from a
-  shell, with and without that one variable.
-- `0004` drops `LSApplicationCategoryType` (games), by which Game Mode took
+- `0003` drops `LSApplicationCategoryType` (games), by which Game Mode took
   the launcher itself for a game. The game is still one: `wine.app`
   declares `LSSupportsGameMode`.
-- `0005` lists Wine processes in process instead of running `ps` and parsing
+- `0004` lists Wine processes in process instead of running `ps` and parsing
   the whole process table: libproc's process list and each process's
   arguments, of which only the ones `WineProcessMonitor`'s classification
   could accept are passed on, in `ps`'s format (about 27 ms a poll against
