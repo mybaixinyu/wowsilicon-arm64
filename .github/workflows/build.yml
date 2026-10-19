@@ -43,7 +43,9 @@ defaults:
 
 jobs:
   build:
-    runs-on: macos-26
+    # Not release.yml's macos-26: arm64-11.19-2 was built locally with
+    # Xcode 27 (its notes say so), and only that linker makes its loader.
+    runs-on: xcode-27
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -120,6 +122,31 @@ jobs:
           git -C scripts log --oneline -4
       - name: Report the runner, select Xcode and its Metal toolchain
         run: scripts/bin/ci/host.sh --metal
+      # In place of release.yml's "Import the signing identity".
+      - name: Signed loader app
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.loader_release }}
+        run: |
+          asset="wine-$RELEASE-macos-arm64.tar.xz"
+          digest=$(gh api "repos/athei/wine-build/releases/tags/$RELEASE" \
+            --jq ".assets[] | select(.name == \"$asset\") | .digest")
+          gh release download "$RELEASE" -R athei/wine-build -p "$asset" -D "$RUNNER_TEMP"
+          echo "${digest#sha256:}  $RUNNER_TEMP/$asset" | shasum -a 256 -c
+          mkdir "$RUNNER_TEMP/loader"
+          tar -xJf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/loader" wine/lib/wine/aarch64-unix/wine.app
+          app="$RUNNER_TEMP/loader/wine/lib/wine/aarch64-unix/wine.app"
+          codesign --verify --strict --verbose "$app"
+          # The loader is compared section by section, and a linker of another
+          # Xcode lays out __unwind_info differently, so the SDK has to be the
+          # release's. Checked here, before hours of building.
+          want=$(otool -l "$app/Contents/MacOS/wine" | awk '$1 == "sdk" { print $2; exit }')
+          have=$(xcrun --sdk macosx --show-sdk-version)
+          if [ "$want" != "$have" ]; then
+            echo "Error: $RELEASE's loader was linked with the macOS $want SDK, this runner's Xcode has $have."
+            exit 1
+          fi
+          echo "LOADER_APP=$app" >> "$GITHUB_ENV"
       - name: Install the Homebrew formulae
         uses: ./scripts/.github/actions/brew
       - name: Compute the cache keys
@@ -161,22 +188,6 @@ jobs:
         with:
           path: build/dxmt/llvm15
           key: ${{ steps.keys.outputs.llvm15 }}
-      # In place of release.yml's "Import the signing identity".
-      - name: Signed loader app
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE: ${{ inputs.loader_release }}
-        run: |
-          asset="wine-$RELEASE-macos-arm64.tar.xz"
-          digest=$(gh api "repos/athei/wine-build/releases/tags/$RELEASE" \
-            --jq ".assets[] | select(.name == \"$asset\") | .digest")
-          gh release download "$RELEASE" -R athei/wine-build -p "$asset" -D "$RUNNER_TEMP"
-          echo "${digest#sha256:}  $RUNNER_TEMP/$asset" | shasum -a 256 -c
-          mkdir "$RUNNER_TEMP/loader"
-          tar -xJf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/loader" wine/lib/wine/aarch64-unix/wine.app
-          app="$RUNNER_TEMP/loader/wine/lib/wine/aarch64-unix/wine.app"
-          codesign --verify --strict --verbose "$app"
-          echo "LOADER_APP=$app" >> "$GITHUB_ENV"
       - name: Bundle
         run: scripts/bin/bundle-wine.sh --strict-floor --symbols --yes
       - name: Package
