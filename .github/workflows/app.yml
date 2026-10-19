@@ -61,7 +61,11 @@ jobs:
           ls
           shasum -a 256 -c ./*.tar.xz.sha256
           tar -xJf ./*.tar.xz
-          cat wine/BUILD-INFO.txt
+          # build.yml now writes BUILD-INFO.txt and package.sh's notes.md
+          # beside the tarball; bundles of earlier runs carry it inside.
+          [ -f BUILD-INFO.txt ] || cp wine/BUILD-INFO.txt BUILD-INFO.txt
+          cat BUILD-INFO.txt
+          [ ! -f notes.md ] || cat notes.md
       # The app carries what runs games; headers, import and static libraries,
       # the SDK tools, man pages and Wine's graphics tests stay in the bundle
       # artifact.
@@ -105,7 +109,7 @@ jobs:
           {
             echo "app: WoWSilicon/WoWSilicon@$(git -C app rev-parse HEAD) + $(ls ci/patches/app | tr '\n' ' ')"
             echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
-            sed 's/^/wine bundle: /' "$RUNNER_TEMP/wine/wine/BUILD-INFO.txt"
+            sed 's/^/wine bundle: /' "$RUNNER_TEMP/wine/BUILD-INFO.txt"
           } | tee app/.build/BUILD-INFO.txt
           tar -C app/.build -cJf "$name.tar.xz" WoWSilicon.app BUILD-INFO.txt
           shasum -a 256 "$name.tar.xz" | tee "$name.tar.xz.sha256"

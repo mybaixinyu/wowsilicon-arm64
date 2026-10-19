@@ -1,32 +1,30 @@
 name: build
 
-# Builds the whole arm64 Wine bundle of athei/wine-build (Wine, FEX, DXMT,
-# Mesa's KosmicKrisp and the Vulkan loader, with mtld3d from its release)
-# through its own build-wine.sh and bundle-wine.sh, with patches/wine on top
-# of athei/wine and patches/fex on top of athei/FEX. The one part this
-# repository cannot make is the signed loader app: its entitlement needs a
-# certificate of the provisioning profile's team, so wine.app comes from a
-# wine-build release, and bundle-wine.sh refuses it unless the loader this
-# build makes is the same code (patches/wine-build). app.yml then builds
-# WoWSilicon.app around the bundle. Manual only.
+# The arm64 Wine bundle, built the way athei/wine-build's own release.yml
+# builds it (the same layout, scripts, flags, Homebrew action and caches),
+# with this repository's patches on top: patches/wine on athei/wine,
+# patches/fex on athei/FEX and patches/wine-build on the scripts, each
+# committed, since package.sh names commits and refuses uncommitted changes.
+# The one step that differs is signing: release.yml signs the loader with
+# the team's identity from its secrets, which this repository does not have,
+# so the signed wine.app comes from a wine-build release and bundle-wine.sh
+# refuses it unless the loader this build makes is the same code
+# (patches/wine-build/0001). app.yml then builds WoWSilicon.app around the
+# bundle. Manual only.
 on:
   workflow_dispatch:
     inputs:
-      wine_ref:
-        description: athei/wine full commit SHA (or branch) to build
-        default: d57b522eea5578ea7dcedd2b71bcba3657749e5e
-        type: string
       wine_build_ref:
-        description: athei/wine-build full commit SHA (or branch) whose scripts build it
-        default: bea504916e4ffb2a33a863967a85471d09150ed8
+        description: athei/wine-build full commit SHA (or branch) whose scripts and pins build it
+        default: e88a256dcb6b6c79ea59aec012208662d1caf04f
+        type: string
+      wine_ref:
+        description: athei/wine ref to build instead of pins/wine-src.ref (empty for the pin)
+        default: ""
         type: string
       fex_ref:
-        description: athei/FEX full commit SHA, written to pins/fex-src.ref
-        default: 977affeb7ddbd853e7e8290ed3fbb5be0eb48deb
-        type: string
-      mesa_ref:
-        description: athei/mesa full commit SHA, written to pins/mesa-src.ref
-        default: 46416db6940bf647d22be69c18fc0ae05393495b
+        description: athei/FEX ref to build instead of pins/fex-src.ref (empty for the pin)
+        default: ""
         type: string
       loader_release:
         description: athei/wine-build release whose signed wine.app is bundled
@@ -38,80 +36,132 @@ permissions:
   # app.yml, called below, reads this run's artifact.
   actions: read
 
-env:
-  LLVM_MINGW_TAG: "20261006"
-  LLVM_MINGW: llvm-mingw-20261006-ucrt-macos-universal
-  LLVM_MINGW_SHA256: a7a19b11048e89372637d26279cdb7c430ed3cf8c1e224310421312bf986ebf6
-  # DEPS_FORMULAE of bin/lib/profile.sh, the formulae build-mesa.sh's tools
-  # link, and the build tools the scripts check for.
-  FORMULAE: >-
-    freetype gnutls sdl2-compat sdl3 bison pkgconf
-    llvm spirv-llvm-translator spirv-tools
-    meson ninja cmake
+# bash -eo pipefail, so a failure inside a pipe fails the step.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build:
-    # macOS 27 with its SDK, which the arm64-11.19 bundles were built with.
-    runs-on: xcode-27
-    timeout-minutes: 345
+    runs-on: macos-26
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
         with:
           path: ci
+      # The scripts take the workspace, the parent of scripts/, as the root of
+      # their layout: the Wine source in src/, downloads in cache/, the trees
+      # under build/ and the bundle in dist/.
       - uses: actions/checkout@v5
         with:
           repository: athei/wine-build
           ref: ${{ inputs.wine_build_ref }}
-          path: root/scripts
+          path: scripts
+          persist-credentials: false
+      - name: Read the Wine source ref
+        id: ref
+        run: |
+          ref="${{ inputs.wine_ref }}"
+          [ -n "$ref" ] || ref=$(tr -d '[:space:]' < scripts/pins/wine-src.ref)
+          if [ -z "$ref" ]; then
+            echo "pins/wine-src.ref names no ref."
+            exit 1
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      # The whole history without file contents: the build writes `git
+      # describe` into ntdll, and the notes name it.
       - uses: actions/checkout@v5
         with:
           repository: athei/wine
-          ref: ${{ inputs.wine_ref }}
-          path: root/src
-          fetch-depth: 1
-      # One commit per patch, so the tree is clean and WINE_COMMIT names what
-      # was built.
-      - name: Prepare the sources
+          ref: ${{ steps.ref.outputs.ref }}
+          path: src
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Fetch the Wine release tag
         run: |
-          for p in "$GITHUB_WORKSPACE"/ci/patches/wine-build/*.patch; do git -C root/scripts apply --verbose "$p"; done
-          # build-fex.sh clones FEX_REPO and checks out fex-src.ref, so the
-          # patched FEX is a local repository with one commit per patch.
+          version=$(sed -n 's/^Wine version //p' src/VERSION)
+          git -C src fetch --quiet --no-tags https://github.com/wine-mirror/wine \
+            "refs/tags/wine-$version:refs/tags/wine-$version"
+          git -C src describe HEAD
+      # One commit per patch, so the trees are clean and the notes name what
+      # was built. build-fex.sh clones FEX_REPO and checks out fex-src.ref, so
+      # the patched FEX is a local repository.
+      - name: Apply this repository's patches
+        run: |
+          commit() {
+            git -C "$1" add -A
+            git -C "$1" -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
+              commit --quiet -m "$2"
+          }
+          for p in "$GITHUB_WORKSPACE"/ci/patches/wine/*.patch; do
+            git -C src apply --verbose "$p"
+            commit src "$(basename "$p" .patch)"
+          done
+          fex_ref="${{ inputs.fex_ref }}"
+          [ -n "$fex_ref" ] || fex_ref=$(tr -d '[:space:]' < scripts/pins/fex-src.ref)
           fex="$RUNNER_TEMP/fex"
           git init --quiet "$fex"
-          git -C "$fex" fetch --quiet --depth 1 https://github.com/athei/FEX "${{ inputs.fex_ref }}"
+          git -C "$fex" fetch --quiet --depth 1 https://github.com/athei/FEX "$fex_ref"
           git -C "$fex" checkout --quiet FETCH_HEAD
+          echo "FEX_BASE=$(git -C "$fex" rev-parse HEAD)" >> "$GITHUB_ENV"
           for p in "$GITHUB_WORKSPACE"/ci/patches/fex/*.patch; do
             git -C "$fex" apply --verbose "$p"
-            git -C "$fex" add -A
-            git -C "$fex" -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
-              commit --quiet -m "$(basename "$p" .patch)"
+            commit "$fex" "$(basename "$p" .patch)"
           done
           echo "FEX_REPO=file://$fex" >> "$GITHUB_ENV"
-          echo "FEX_BASE=$(git -C "$fex" rev-parse "HEAD~$(ls ci/patches/fex/*.patch | wc -l | tr -d ' ')")" >> "$GITHUB_ENV"
-          git -C "$fex" rev-parse HEAD > root/scripts/pins/fex-src.ref
-          echo "${{ inputs.mesa_ref }}" > root/scripts/pins/mesa-src.ref
-          for p in "$GITHUB_WORKSPACE"/ci/patches/wine/*.patch; do
-            git -C root/src apply --verbose "$p"
-            git -C root/src add -A
-            git -C root/src -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
-              commit --quiet -m "$(basename "$p" .patch)"
+          for p in "$GITHUB_WORKSPACE"/ci/patches/wine-build/*.patch; do
+            git -C scripts apply --verbose "$p"
+            commit scripts "$(basename "$p" .patch)"
           done
-          git -C root/src log --oneline -8
-      - name: Toolchain
+          git -C "$fex" rev-parse HEAD > scripts/pins/fex-src.ref
+          commit scripts "Build the patched FEX"
+          git -C src log --oneline -10
+          git -C scripts log --oneline -4
+      - name: Report the runner, select Xcode and its Metal toolchain
+        run: scripts/bin/ci/host.sh --metal
+      - name: Install the Homebrew formulae
+        uses: ./scripts/.github/actions/brew
+      - name: Compute the cache keys
+        id: keys
         run: |
-          brew install $FORMULAE
-          curl -fsSL -o "$RUNNER_TEMP/$LLVM_MINGW.tar.xz" \
-            "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_TAG/$LLVM_MINGW.tar.xz"
-          echo "$LLVM_MINGW_SHA256  $RUNNER_TEMP/$LLVM_MINGW.tar.xz" | shasum -a 256 -c
-          tar -xf "$RUNNER_TEMP/$LLVM_MINGW.tar.xz" -C "$RUNNER_TEMP"
-          echo "MINGW_DIR=$RUNNER_TEMP/$LLVM_MINGW" >> "$GITHUB_ENV"
-          # xcrun -f finds the metal stub even without the toolchain; running it is the test.
-          xcrun -sdk macosx metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
-          # The download can return before the system has mounted the toolchain.
-          for i in $(seq 30); do xcrun -sdk macosx metal --version >/dev/null 2>&1 && break; sleep 10; done
-          xcrun -sdk macosx metal --version
-          xcrun --show-sdk-version
-          rustc --version
+          SCRIPT_DIR=scripts/bin . scripts/bin/lib/profile.sh
+          . scripts/pins/redist.env
+          xcode=$(xcodebuild -version | awk 'NR == 1 { print $2 }')
+          echo "llvm15=dxmt-llvm15-$LLVM15_GIT_COMMIT-floor$MACOS_FLOOR-xcode$xcode-$ImageOS-${{ hashFiles('scripts/bin/build-dxmt.sh') }}" >> "$GITHUB_OUTPUT"
+      - name: Cache the pinned downloads
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: redist-${{ hashFiles('scripts/pins/redist.env') }}
+      - name: Install llvm-mingw
+        run: |
+          scripts/bin/ci/llvm-mingw.sh "$HOME/llvm-mingw"
+          echo "MINGW_DIR=$HOME/llvm-mingw" >> "$GITHUB_ENV"
+      - name: Add the Rust target
+        run: rustup target add aarch64-apple-darwin
+      - name: Cache the cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ hashFiles('scripts/compatdb/Cargo.lock') }}
+      - name: Restore DXMT's LLVM
+        id: llvm15-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/dxmt/llvm15
+          key: ${{ steps.keys.outputs.llvm15 }}
+      - name: Build
+        run: scripts/bin/build-wine.sh --clean
+      - name: Save DXMT's LLVM
+        if: always() && steps.llvm15-cache.outputs.cache-hit != 'true' && hashFiles('build/dxmt/llvm15/COMMIT') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: build/dxmt/llvm15
+          key: ${{ steps.keys.outputs.llvm15 }}
+      # In place of release.yml's "Import the signing identity".
       - name: Signed loader app
         env:
           GH_TOKEN: ${{ github.token }}
@@ -127,57 +177,40 @@ jobs:
           app="$RUNNER_TEMP/loader/wine/lib/wine/aarch64-unix/wine.app"
           codesign --verify --strict --verbose "$app"
           echo "LOADER_APP=$app" >> "$GITHUB_ENV"
-      # LLVM 15's static libraries take the longest to build and change only
-      # with the pin, so they are saved as soon as build-wine.sh has them,
-      # even when a later step fails.
-      - name: Restore LLVM 15 for DXMT
-        id: llvm15
-        uses: actions/cache/restore@v4
-        with:
-          path: root/build/dxmt/llvm15
-          key: dxmt-llvm15-${{ hashFiles('root/scripts/pins/redist.env') }}-xcode27
-          # Any LLVM 15 will do: build-dxmt.sh rebuilds it unless its COMMIT is the pin.
-          restore-keys: dxmt-llvm15-
-      - name: build-wine.sh
-        run: root/scripts/bin/build-wine.sh
-      - name: Save LLVM 15 for DXMT
-        if: always() && steps.llvm15.outputs.cache-hit != 'true' && hashFiles('root/build/dxmt/llvm15/COMMIT') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: root/build/dxmt/llvm15
-          key: dxmt-llvm15-${{ hashFiles('root/scripts/pins/redist.env') }}-xcode27
-      # The runner's paravirtual GPU cannot create a KosmicKrisp Vulkan
-      # instance (vkCreateInstance returns VK_ERROR_INITIALIZATION_FAILED), so
-      # the GPU smoke checks are left to a real Mac; the full bundle carries
-      # Wine's graphics tests for that.
-      - name: bundle-wine.sh
-        env:
-          SMOKE_SKIP_GPU: "1"
-        run: root/scripts/bin/bundle-wine.sh --yes
+      - name: Bundle
+        run: scripts/bin/bundle-wine.sh --strict-floor --symbols --yes
       - name: Package
         run: |
-          name="wowsilicon-arm64-$(git -C root/src describe --tags --always)"
+          name="wowsilicon-arm64-$(git -C src describe --tags --always)"
+          scripts/bin/ci/package.sh "$name" "$RUNNER_TEMP/release"
           {
-            echo "wine: athei/wine@$(git -C root/src rev-parse HEAD~$(ls ci/patches/wine/*.patch | wc -l | tr -d ' ')) + $(ls ci/patches/wine | tr '\n' ' ')"
-            echo "wine-build: athei/wine-build@$(git -C root/scripts rev-parse HEAD) + $(ls ci/patches/wine-build | tr '\n' ' ')"
+            echo "wine: athei/wine@$(git -C src rev-parse HEAD~$(ls ci/patches/wine/*.patch | wc -l | tr -d ' ')) + $(ls ci/patches/wine | tr '\n' ' ')"
+            echo "wine-build: athei/wine-build@$(git -C scripts rev-parse "HEAD~$(( $(ls ci/patches/wine-build/*.patch | wc -l) + 1 ))") + $(ls ci/patches/wine-build | tr '\n' ' ')"
             echo "fex: athei/FEX@$FEX_BASE + $(ls ci/patches/fex | tr '\n' ' ')"
-            echo "mesa: athei/mesa@${{ inputs.mesa_ref }}"
             echo "loader: wine.app of athei/wine-build ${{ inputs.loader_release }}"
             echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
             echo "sdk: $(xcrun --show-sdk-version)"
-            echo "version: $(root/dist/wine/bin/wine --version)"
-          } | tee root/dist/wine/BUILD-INFO.txt
-          tar -C root/dist -cJf "$name.tar.xz" wine
-          shasum -a 256 "$name.tar.xz" | tee "$name.tar.xz.sha256"
+          } | tee "$RUNNER_TEMP/release/BUILD-INFO.txt"
+          cat "$RUNNER_TEMP/release/notes.md"
+          (cd "$RUNNER_TEMP/release" && shasum -a 256 "wine-$name-macos-arm64.tar.xz" | tee "wine-$name-macos-arm64.tar.xz.sha256")
           echo "NAME=$name" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.NAME }}
           path: |
-            ${{ env.NAME }}.tar.xz
-            ${{ env.NAME }}.tar.xz.sha256
+            ${{ runner.temp }}/release/wine-${{ env.NAME }}-macos-arm64.tar.xz
+            ${{ runner.temp }}/release/wine-${{ env.NAME }}-macos-arm64.tar.xz.sha256
+            ${{ runner.temp }}/release/notes.md
+            ${{ runner.temp }}/release/BUILD-INFO.txt
           compression-level: 0
           retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symbols-${{ env.NAME }}
+          path: ${{ runner.temp }}/release/wine-${{ env.NAME }}-macos-arm64-symbols.tar.xz
+          compression-level: 0
+          retention-days: 7
           if-no-files-found: error
   app:
     needs: build

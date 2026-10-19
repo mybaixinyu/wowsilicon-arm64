@@ -5,17 +5,21 @@ arm64 Wine of [athei/wine-build](https://github.com/athei/wine-build), both
 from source, with WoWSilicon's Wine patches on top, without waiting for a
 release of either.
 
-- Wine is `athei/wine` at any commit, plus `patches/wine`.
-- FEX, Mesa (KosmicKrisp and the Vulkan loader), DXMT and the Wine SDK are
-  built by wine-build's own `build-wine.sh` at the pinned commits; mtld3d
-  comes from the release `pins/redist.env` names. FEX gets `patches/fex`.
-- `bundle-wine.sh` assembles the full bundle, with Wine's graphics tests, and
-  runs its smoke test. The runner's virtual GPU cannot create a Vulkan
-  instance, so `SMOKE_SKIP_GPU=1` (`patches/wine-build/0003`) leaves the
-  Vulkan and wined3d device checks to a real Mac.
-- `patches/wine-build/0002` bundles Homebrew libraries that their siblings
-  load by `@rpath` (`libbrotlicommon` of current `freetype`), which the
-  bundle step left out, so FreeType failed to load.
+`build.yml` builds the bundle the way wine-build's own `release.yml` does:
+the same runner, layout, `bin/ci` scripts, Homebrew action, caches and
+`bundle-wine.sh --strict-floor --symbols`, then `package.sh`. On top of it:
+
+- Wine is the ref in wine-build's `pins/wine-src.ref` (or `wine_ref`), plus
+  `patches/wine`; FEX is the ref in `pins/fex-src.ref` (or `fex_ref`), plus
+  `patches/fex`. Mesa, DXMT, mtld3d and llvm-mingw are what wine-build pins.
+- Each patch is committed, since `package.sh` names commits and refuses
+  uncommitted changes.
+- The signed loader replaces `release.yml`'s signing step (below).
+
+The artifact holds the bundle tarball, its SHA-256, `package.sh`'s
+`notes.md` (what everything was built from, the Homebrew library versions
+included) and `BUILD-INFO.txt` (this repository's patches); the symbols are
+a separate artifact.
 
 ## FEX
 
@@ -88,7 +92,8 @@ gh workflow run build.yml --repo mybaixinyu/wowsilicon-arm64
 gh workflow run app.yml --repo mybaixinyu/wowsilicon-arm64 -f wine_run_id=<build.yml run>
 ```
 
-The inputs default to what `arm64-11.19-2` was built from. The artifacts are
-`wowsilicon-arm64-<describe>.tar.xz`, a `wine/` tree with `BUILD-INFO.txt`,
-and `app-wowsilicon-arm64-<version>-<commit>.tar.xz`, `WoWSilicon.app`
-with `BUILD-INFO.txt`.
+`wine_build_ref` defaults to a wine-build commit, whose pins name the rest;
+`loader_release` to the release whose `wine.app` matches its Wine. The
+artifacts are `wowsilicon-arm64-<describe>` (above) and
+`app-wowsilicon-arm64-<version>-<commit>.tar.xz`, `WoWSilicon.app` with
+`BUILD-INFO.txt`.
