@@ -6,8 +6,16 @@ from source, with WoWSilicon's Wine patches on top, without waiting for a
 release of either.
 
 `build.yml` builds the bundle the way wine-build's own `release.yml` does:
-the same runner, layout, `bin/ci` scripts, Homebrew action, caches and
-`bundle-wine.sh --strict-floor --symbols`, then `package.sh`. On top of it:
+the same layout, `bin/ci` scripts, Homebrew action, caches and
+`bundle-wine.sh --symbols`, then `package.sh`. On top of it:
+
+- It runs on `xcode-27`, not `macos-26`: the signed loader comes from a
+  release the author built locally with Xcode 27, and Xcode 26's linker
+  writes a different `__unwind_info`, which the loader comparison refuses.
+  macOS 27's Homebrew bottles then carry minos 27.0, so the bundle is built
+  without `--strict-floor`, as wine-build does for a local build that is
+  not distributed; it runs on macOS 27 only. Once the loader comes from a
+  release built in CI on `macos-26`, both go back to `release.yml`'s.
 
 - Wine is the ref in wine-build's `pins/wine-src.ref` (or `wine_ref`), plus
   `patches/wine`; FEX is the ref in `pins/fex-src.ref` (or `fex_ref`), plus

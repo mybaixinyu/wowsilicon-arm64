@@ -45,6 +45,7 @@ jobs:
   build:
     # Not release.yml's macos-26: arm64-11.19-2 was built locally with
     # Xcode 27 (its notes say so), and only that linker makes its loader.
+    # Back to macos-26 once loader_release is a release built there.
     runs-on: xcode-27
     timeout-minutes: 360
     steps:
@@ -189,7 +190,10 @@ jobs:
           path: build/dxmt/llvm15
           key: ${{ steps.keys.outputs.llvm15 }}
       - name: Bundle
-        run: scripts/bin/bundle-wine.sh --strict-floor --symbols --yes
+        # Without release.yml's --strict-floor: macOS 27's bottles carry minos
+        # 27.0, which wine-build reports as a warning for a build that is not
+        # distributed. Back with macos-26 (see runs-on).
+        run: scripts/bin/bundle-wine.sh --symbols --yes
       - name: Package
         run: |
           name="wowsilicon-arm64-$(git -C src describe --tags --always)"
