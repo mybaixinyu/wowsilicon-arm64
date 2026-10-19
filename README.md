@@ -52,10 +52,14 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
 - `0004` drops `LSApplicationCategoryType` (games), by which Game Mode took
   the launcher itself for a game. The game is still one: `wine.app`
   declares `LSSupportsGameMode`.
-- `0005` polls for Wine processes every 10 seconds while a game runs instead
-  of every 2. Each poll runs `ps` over every process and parses its output,
-  about 70 ms of CPU, which showed as WoWSilicon at 5–27 % beside the game.
-  The game's exit refreshes the count at once instead.
+- `0005` lists Wine processes in process instead of running `ps` and parsing
+  the whole process table: libproc's process list and each process's
+  arguments, of which only the ones `WineProcessMonitor`'s classification
+  could accept are passed on, in `ps`'s format (about 27 ms a poll against
+  165 ms, the same processes on a system running Wine). While a process
+  WoWSilicon started runs, it does not poll: that process's exit requests a
+  poll, and a 60-second poll is the fallback. That cost showed as
+  WoWSilicon at 5–27 % CPU beside the game.
 
 The app leaves out what only building against Wine or testing it needs:
 `include`, the import and static libraries, the SDK tools in `bin`, the man

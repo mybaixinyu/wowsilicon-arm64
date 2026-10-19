@@ -1,0 +1,248 @@
+diff --git a/Sources/WoWSiliconSwift/Services/LaunchService.swift b/Sources/WoWSiliconSwift/Services/LaunchService.swift
+index 46d6b3f..b93bba7 100644
+--- a/Sources/WoWSiliconSwift/Services/LaunchService.swift
++++ b/Sources/WoWSiliconSwift/Services/LaunchService.swift
+@@ -844,6 +844,11 @@ final class LaunchService: @unchecked Sendable {
+         focusObservation = nil
+     }
+ 
++    /// Whether a process this service started is still running; its exit calls processDidTerminate.
++    var hasRunningProcesses: Bool {
++        processQueue.sync { !runningProcesses.isEmpty }
++    }
++
+     private func trackProcess(_ process: Process) {
+         processQueue.sync {
+             runningProcesses.append(process)
+diff --git a/Sources/WoWSiliconSwift/Services/ProcessArguments.swift b/Sources/WoWSiliconSwift/Services/ProcessArguments.swift
+new file mode 100644
+index 0000000..7812773
+--- /dev/null
++++ b/Sources/WoWSiliconSwift/Services/ProcessArguments.swift
+@@ -0,0 +1,73 @@
++import Darwin
++
++enum ProcessArguments {
++    /// `pid command` lines in the form of `ps -axo pid=,command=`, for the processes whose arguments
++    /// contain one of `markers` or whose first argument's file name is one of `names`, both compared
++    /// with ASCII letters lowered. Reading the arguments in process skips spawning ps and turning the
++    /// whole process table into Swift strings, which took about 160 ms a poll against 26 ms.
++    static func commandLines(markers: [String], names: Set<String>) -> String? {
++        var argumentMaximum: Int32 = 0
++        var size = MemoryLayout<Int32>.size
++        var argumentMaximumMIB = [CTL_KERN, KERN_ARGMAX]
++        guard sysctl(&argumentMaximumMIB, 2, &argumentMaximum, &size, nil, 0) == 0, argumentMaximum > 0 else {
++            return nil
++        }
++        let capacity = proc_listallpids(nil, 0)
++        guard capacity > 0 else { return nil }
++        // Room for processes started between the two calls.
++        var processIDs = [pid_t](repeating: 0, count: Int(capacity) + 64)
++        let count = processIDs.withUnsafeMutableBufferPointer {
++            proc_listallpids($0.baseAddress, Int32($0.count * MemoryLayout<pid_t>.size))
++        }
++        guard count > 0 else { return nil }
++
++        let loweredMarkers = markers.filter { !$0.isEmpty }.map { lowered(Array($0.utf8)) }
++        var buffer = [UInt8](repeating: 0, count: Int(argumentMaximum))
++        var lines = ""
++        for processID in processIDs.prefix(Int(count)) where processID > 0 {
++            guard let arguments = arguments(of: processID, buffer: &buffer), !arguments.isEmpty else { continue }
++            let loweredArguments = lowered(arguments)
++            let first = loweredArguments.split(separator: 0, omittingEmptySubsequences: false).first ?? []
++            let firstName = String(decoding: first.split(separator: UInt8(ascii: "/")).last ?? [], as: UTF8.self)
++            guard names.contains(firstName)
++                    || loweredMarkers.contains(where: { loweredArguments.firstRange(of: $0) != nil }) else {
++                continue
++            }
++            let command = String(decoding: arguments.map { $0 == 0 ? UInt8(ascii: " ") : $0 }, as: UTF8.self)
++            lines += "\(processID) \(command)\n"
++        }
++        return lines
++    }
++
++    static func arguments(of processID: pid_t, buffer: inout [UInt8]) -> ArraySlice<UInt8>? {
++        var mib = [CTL_KERN, KERN_PROCARGS2, processID]
++        var size = buffer.count
++        guard buffer.withUnsafeMutableBytes({ sysctl(&mib, 3, $0.baseAddress, &size, nil, 0) }) == 0 else {
++            return nil
++        }
++        return parseProcargs2(buffer[..<size])
++    }
++
++    /// The NUL-separated arguments in KERN_PROCARGS2 data: argc, the executable path, NUL padding,
++    /// then argc arguments, with the environment after them.
++    static func parseProcargs2(_ data: ArraySlice<UInt8>) -> ArraySlice<UInt8>? {
++        guard data.count > MemoryLayout<Int32>.size else { return nil }
++        let argumentCount = data.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
++        var index = data.startIndex + MemoryLayout<Int32>.size
++        while index < data.endIndex, data[index] != 0 { index += 1 }
++        while index < data.endIndex, data[index] == 0 { index += 1 }
++        let start = index
++        var remaining = argumentCount
++        while index < data.endIndex, remaining > 0 {
++            if data[index] == 0 { remaining -= 1 }
++            index += 1
++        }
++        var end = index
++        while end > start, data[end - 1] == 0 { end -= 1 }
++        return data[start..<end]
++    }
++
++    private static func lowered<C: Collection>(_ bytes: C) -> [UInt8] where C.Element == UInt8 {
++        bytes.map { (65...90).contains($0) ? $0 + 32 : $0 }
++    }
++}
+diff --git a/Sources/WoWSiliconSwift/Services/WineProcessMonitor.swift b/Sources/WoWSiliconSwift/Services/WineProcessMonitor.swift
+index 303bf5f..6d5ada9 100644
+--- a/Sources/WoWSiliconSwift/Services/WineProcessMonitor.swift
++++ b/Sources/WoWSiliconSwift/Services/WineProcessMonitor.swift
+@@ -47,18 +47,19 @@ enum WineProcessMonitor {
+     }
+ 
+     private static func processIDs(applicationProcessesOnly: Bool) -> Set<Int32>? {
+-        guard let result = try? ProcessRunner.runWithBoundedOutput(
+-            executablePath: "/bin/ps",
+-            arguments: ["-axo", "pid=,command="],
+-            timeout: 5
+-        ), result.exitCode == 0 else {
++        let runtimeRoot = BundledWineRuntime.rootURL()?.path
++        // Every command isWineProcess accepts holds one of these (the Windows executables all end in
++        // .exe) or starts with a Wine host executable, so the classification sees what ps would list.
++        guard let processList = ProcessArguments.commandLines(
++            markers: [".exe", "rosettax87", "x87sidecar", runtimeRoot ?? ""],
++            names: wineHostExecutables
++        ) else {
+             return nil
+         }
+ 
+-        let runtimeRoot = BundledWineRuntime.rootURL()?.path
+         return applicationProcessesOnly
+-            ? applicationProcessIDs(in: result.stdout, runtimeRoot: runtimeRoot)
+-            : processIDs(in: result.stdout, runtimeRoot: runtimeRoot)
++            ? applicationProcessIDs(in: processList, runtimeRoot: runtimeRoot)
++            : processIDs(in: processList, runtimeRoot: runtimeRoot)
+     }
+ 
+     static func processIDs(in processList: String, runtimeRoot: String?) -> Set<Int32> {
+diff --git a/Sources/WoWSiliconSwift/ViewModels/MainDashboardViewModel.swift b/Sources/WoWSiliconSwift/ViewModels/MainDashboardViewModel.swift
+index ac5b62b..da11f55 100644
+--- a/Sources/WoWSiliconSwift/ViewModels/MainDashboardViewModel.swift
++++ b/Sources/WoWSiliconSwift/ViewModels/MainDashboardViewModel.swift
+@@ -24,6 +24,7 @@ final class MainDashboardViewModel: ObservableObject {
+     @Published private(set) var currentVersionLauncherName: String = "Open Launcher"
+     @Published private(set) var isLauncherLoading: Bool = false
+     @Published private(set) var wineProcessCount: Int = 0
++    private var wineProcessPollRequested = false
+     @Published private(set) var isForceQuittingWine: Bool = false
+     @Published private(set) var isCheckingWineProcesses: Bool = false
+     @Published private(set) var shouldShowVanillaTweaksPrompt: Bool = false
+@@ -309,6 +310,7 @@ final class MainDashboardViewModel: ObservableObject {
+ 
+     func monitorWineProcesses() async {
+         while !Task.isCancelled {
++            wineProcessPollRequested = false
+             let processCount = await Task.detached(priority: .utility) {
+                 WineProcessMonitor.currentApplicationProcessCount()
+             }.value
+@@ -320,7 +322,8 @@ final class MainDashboardViewModel: ObservableObject {
+ 
+             let interval = Self.wineProcessPollingIntervalSeconds(
+                 processCount: processCount ?? wineProcessCount,
+-                isLaunchOrShutdownActive: isWineProcessPollingActive
++                isLaunchOrShutdownActive: isWineProcessPollingActive,
++                isLaunchedProcessRunning: launchService.hasRunningProcesses
+             )
+             for _ in 0..<interval {
+                 do {
+@@ -328,7 +331,7 @@ final class MainDashboardViewModel: ObservableObject {
+                 } catch {
+                     return
+                 }
+-                if isWineProcessPollingActive && interval > 1 {
++                if wineProcessPollRequested || (isWineProcessPollingActive && interval > 1) {
+                     break
+                 }
+             }
+@@ -337,11 +340,16 @@ final class MainDashboardViewModel: ObservableObject {
+ 
+     static func wineProcessPollingIntervalSeconds(
+         processCount: Int,
+-        isLaunchOrShutdownActive: Bool
++        isLaunchOrShutdownActive: Bool,
++        isLaunchedProcessRunning: Bool = false
+     ) -> Int {
+         if isLaunchOrShutdownActive {
+             return 1
+         }
++        if processCount > 0 && isLaunchedProcessRunning {
++            // The launched process's exit requests a poll (installLaunchTerminationHandler); this is a fallback.
++            return 60
++        }
+         return processCount > 0 ? 2 : 10
+     }
+ 
+@@ -735,6 +743,7 @@ final class MainDashboardViewModel: ObservableObject {
+         launchService.processDidTerminate = { [weak self] in
+             guard let self else { return }
+             self.refreshSnapshot()
++            self.wineProcessPollRequested = true
+         }
+     }
+ 
+diff --git a/Tests/WoWSiliconSwiftTests/MainDashboardViewModelTests.swift b/Tests/WoWSiliconSwiftTests/MainDashboardViewModelTests.swift
+index 446a51d..d221fe6 100644
+--- a/Tests/WoWSiliconSwiftTests/MainDashboardViewModelTests.swift
++++ b/Tests/WoWSiliconSwiftTests/MainDashboardViewModelTests.swift
+@@ -25,5 +25,13 @@ final class MainDashboardViewModelTests: XCTestCase {
+             ),
+             1
+         )
++        XCTAssertEqual(
++            MainDashboardViewModel.wineProcessPollingIntervalSeconds(
++                processCount: 1,
++                isLaunchOrShutdownActive: false,
++                isLaunchedProcessRunning: true
++            ),
++            60
++        )
+     }
+ }
+diff --git a/Tests/WoWSiliconSwiftTests/ProcessArgumentsTests.swift b/Tests/WoWSiliconSwiftTests/ProcessArgumentsTests.swift
+new file mode 100644
+index 0000000..04ba596
+--- /dev/null
++++ b/Tests/WoWSiliconSwiftTests/ProcessArgumentsTests.swift
+@@ -0,0 +1,32 @@
++import Foundation
++import XCTest
++@testable import WoWSiliconSwift
++
++final class ProcessArgumentsTests: XCTestCase {
++    func testParsesArgumentsAndSkipsExecutablePathAndEnvironment() {
++        var data = [UInt8]()
++        withUnsafeBytes(of: Int32(2)) { data += $0 }
++        data += Array("/usr/bin/wine".utf8) + [0, 0, 0, 0]
++        data += Array("wine".utf8) + [0] + Array("Z:\\Games\\WoW.exe".utf8) + [0]
++        data += Array("HOME=/Users/tester".utf8) + [0]
++
++        let arguments = ProcessArguments.parseProcargs2(data[...])
++
++        XCTAssertEqual(arguments.map { Array($0) }, Array("wine\u{0}Z:\\Games\\WoW.exe".utf8))
++    }
++
++    func testListsTheCurrentProcessByAMarkerInItsArguments() throws {
++        let marker = (ProcessInfo.processInfo.arguments.first as NSString?)?.lastPathComponent ?? ""
++        XCTAssertFalse(marker.isEmpty)
++
++        let lines = try XCTUnwrap(ProcessArguments.commandLines(markers: [marker.uppercased()], names: []))
++
++        XCTAssertTrue(lines.split(separator: "\n").contains { $0.hasPrefix("\(getpid()) ") })
++    }
++
++    func testListsNothingForAnUnmatchedMarker() throws {
++        let lines = try XCTUnwrap(ProcessArguments.commandLines(markers: ["\u{1}no process has this\u{1}"], names: []))
++
++        XCTAssertEqual(lines, "")
++    }
++}
