@@ -1,0 +1,82 @@
+name: macos26
+
+# Runs an app.yml artifact on a macos-26 runner. The bundle is built on
+# xcode-27, whose Homebrew bottles carry minos 27.0 (see build.yml), so this
+# checks that it still loads and runs on macOS 26: every library in
+# lib/external with all symbols bound, a new prefix, a 64-bit and a 32-bit
+# program, and the app itself. Manual only.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: build.yml or app.yml run whose app artifact is checked
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APP: ${{ github.workspace }}/x/WoWSilicon.app
+    steps:
+      - name: Report the runner
+        run: |
+          sw_vers
+          sysctl -n machdep.cpu.brand_string hw.model
+      - name: Fetch the app
+        run: |
+          gh run download "${{ inputs.run_id }}" -R "$GITHUB_REPOSITORY" -p 'app-*' -D dl
+          cd dl/app-*
+          shasum -a 256 -c ./*.sha256
+          mkdir "$GITHUB_WORKSPACE/x"
+          tar -xJf ./*.tar.xz -C "$GITHUB_WORKSPACE/x"
+          cat "$GITHUB_WORKSPACE/x/BUILD-INFO.txt"
+      - name: Verify the signatures
+        run: |
+          codesign --verify --deep --strict --verbose "$APP"
+          codesign --verify --strict --verbose "$APP/Contents/Resources/Wine/lib/wine/aarch64-unix/wine.app"
+      # wine-build's own check, smoke/dlopen.c: each library with every
+      # dependency bound at once (RTLD_NOW), so a symbol macOS 26 lacks fails.
+      - name: Load every library in lib/external
+        run: |
+          curl -fsSL -o dlopen.c https://raw.githubusercontent.com/athei/wine-build/47e387ed7e9ef5dce5eb0549812471495aec3bb2/smoke/dlopen.c
+          clang -target arm64-apple-macos26.4 -o dlopen dlopen.c
+          ext="$APP/Contents/Resources/Wine/lib/external"
+          for f in "$ext"/*.dylib; do
+            printf '%-36s minos %s\n' "$(basename "$f")" "$(vtool -show-build "$f" | awk '$1 == "minos" { print $2 }')"
+          done
+          ./dlopen "$ext"/*.dylib
+          echo "All $(ls "$ext"/*.dylib | wc -l | tr -d ' ') libraries load."
+      - name: Run Wine
+        env:
+          WINEPREFIX: ${{ runner.temp }}/prefix
+          WINEDEBUG: -all
+        run: |
+          wine="$APP/Contents/Resources/Wine/bin/wine"
+          run() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+          "$wine" --version
+          run 300 "$wine" wineboot --init
+          run 120 "$wine" cmd /c 'ver & echo aarch64 ok'
+          run 180 "$wine" 'C:\windows\syswow64\cmd.exe' /c 'ver & echo i386 ok'
+          "$APP/Contents/Resources/Wine/bin/wineserver" -k || true
+      - name: Start the app
+        run: |
+          "$APP/Contents/MacOS/WoWSilicon" > app.log 2>&1 &
+          pid=$!
+          sleep 20
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid"; echo "Error: WoWSilicon exited with $?"; cat app.log; exit 1
+          fi
+          echo "WoWSilicon still running after 20 s"
+          kill "$pid"
+          cat app.log
