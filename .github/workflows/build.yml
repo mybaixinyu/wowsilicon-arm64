@@ -16,7 +16,7 @@ on:
     inputs:
       wine_build_ref:
         description: athei/wine-build full commit SHA (or branch) whose scripts and pins build it
-        default: e88a256dcb6b6c79ea59aec012208662d1caf04f
+        default: 47e387ed7e9ef5dce5eb0549812471495aec3bb2
         type: string
       wine_ref:
         description: athei/wine ref to build instead of pins/wine-src.ref (empty for the pin)
@@ -156,12 +156,15 @@ jobs:
           SCRIPT_DIR=scripts/bin . scripts/bin/lib/profile.sh
           . scripts/pins/redist.env
           xcode=$(xcodebuild -version | awk 'NR == 1 { print $2 }')
-          echo "llvm15=dxmt-llvm15-$LLVM15_GIT_COMMIT-floor$MACOS_FLOOR-xcode$xcode-$ImageOS-${{ hashFiles('scripts/bin/build-dxmt.sh') }}" >> "$GITHUB_OUTPUT"
+          llvm15=$(scripts/bin/ci/pins-key.sh LLVM15_)
+          redist=$(scripts/bin/ci/pins-key.sh MTLD3D_ LLVM_MINGW_)
+          echo "llvm15=dxmt-llvm15-$LLVM15_GIT_COMMIT-floor$MACOS_FLOOR-xcode$xcode-$ImageOS-$llvm15" >> "$GITHUB_OUTPUT"
+          echo "redist=redist-$redist" >> "$GITHUB_OUTPUT"
       - name: Cache the pinned downloads
         uses: actions/cache@v4
         with:
           path: cache
-          key: redist-${{ hashFiles('scripts/pins/redist.env') }}
+          key: ${{ steps.keys.outputs.redist }}
       - name: Install llvm-mingw
         run: |
           scripts/bin/ci/llvm-mingw.sh "$HOME/llvm-mingw"
