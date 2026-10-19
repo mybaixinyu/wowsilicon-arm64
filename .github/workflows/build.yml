@@ -16,7 +16,7 @@ on:
     inputs:
       wine_build_ref:
         description: athei/wine-build full commit SHA (or branch) whose scripts and pins build it
-        default: 47e387ed7e9ef5dce5eb0549812471495aec3bb2
+        default: 2843bd03a326eefa4ebcf51245eb0ec8013ecb92
         type: string
       wine_ref:
         description: athei/wine ref to build instead of pins/wine-src.ref (empty for the pin)

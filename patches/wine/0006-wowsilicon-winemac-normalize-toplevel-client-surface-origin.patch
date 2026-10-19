@@ -1,8 +1,8 @@
 diff --git a/dlls/winemac.drv/window.c b/dlls/winemac.drv/window.c
-index 5c7c925ca6..4031c26da1 100644
+index f38d576273..1713be7f66 100644
 --- a/dlls/winemac.drv/window.c
 +++ b/dlls/winemac.drv/window.c
-@@ -1226,6 +1226,7 @@ static void macdrv_client_surface_update(struct client_surface *client)
+@@ -1243,6 +1243,7 @@ static void macdrv_client_surface_update(struct client_surface *client)
      HWND hwnd = client->hwnd, toplevel = client->toplevel, above_hwnd = NULL;
      WineContentView *above_view = NULL;
      struct macdrv_win_data *data;
@@ -10,7 +10,7 @@ index 5c7c925ca6..4031c26da1 100644
  
      TRACE("%s\n", debugstr_client_surface(client));
  
-@@ -1250,7 +1251,8 @@ static void macdrv_client_surface_update(struct client_surface *client)
+@@ -1267,7 +1268,8 @@ static void macdrv_client_surface_update(struct client_surface *client)
          release_win_data(above_data);
      }
  
@@ -20,7 +20,7 @@ index 5c7c925ca6..4031c26da1 100644
      macdrv_set_view_superview(surface->cocoa_view, toplevel == hwnd ? NULL : data->client_view, data->cocoa_window,
                                above_view, NULL);
      release_win_data(data);
-@@ -1291,12 +1293,15 @@ struct macdrv_client_surface *impl_from_client_surface(struct client_surface *cl
+@@ -1318,6 +1320,7 @@ struct macdrv_client_surface *impl_from_client_surface(struct client_surface *cl
  struct client_surface *macdrv_CreateClientSurface(HWND hwnd, int pixel_format, BOOL raw)
  {
      struct macdrv_client_surface *surface;
@@ -28,12 +28,14 @@ index 5c7c925ca6..4031c26da1 100644
  
      surface = client_surface_create(&macdrv_client_surface_funcs, hwnd, pixel_format, raw);
  
-     if (surface)
+@@ -1325,7 +1328,9 @@ struct client_surface *macdrv_CreateClientSurface(HWND hwnd, int pixel_format, B
      {
+         struct macdrv_win_data *data;
+ 
 -        surface->cocoa_view = macdrv_create_view(cgrect_from_rect(surface->client.monitor_rect));
 +        rect = surface->client.monitor_rect;
 +        if (surface->client.toplevel == hwnd) OffsetRect(&rect, -rect.left, -rect.top);
 +        surface->cocoa_view = macdrv_create_view(cgrect_from_rect(rect));
          macdrv_set_view_hidden(surface->cocoa_view, TRUE);
          macdrv_client_surface_update(&surface->client);
-         macdrv_client_surface_present(&surface->client, 0);
+         if ((data = get_win_data(hwnd)))

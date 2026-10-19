@@ -49,7 +49,7 @@ jobs:
       # dependency bound at once (RTLD_NOW), so a symbol macOS 26 lacks fails.
       - name: Load every library in lib/external
         run: |
-          curl -fsSL -o dlopen.c https://raw.githubusercontent.com/athei/wine-build/47e387ed7e9ef5dce5eb0549812471495aec3bb2/smoke/dlopen.c
+          curl -fsSL -o dlopen.c https://raw.githubusercontent.com/athei/wine-build/2843bd03a326eefa4ebcf51245eb0ec8013ecb92/smoke/dlopen.c
           clang -target arm64-apple-macos26.4 -o dlopen dlopen.c
           ext="$APP/Contents/Resources/Wine/lib/external"
           for f in "$ext"/*.dylib; do
