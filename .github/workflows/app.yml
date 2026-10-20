@@ -66,6 +66,26 @@ jobs:
           [ -f BUILD-INFO.txt ] || cp wine/BUILD-INFO.txt BUILD-INFO.txt
           cat BUILD-INFO.txt
           [ ! -f notes.md ] || cat notes.md
+      # The patcher copies lib/mtld3d.conf into the game. WoWSilicon's own
+      # runtime takes it from the mtld3d release beside the DLLs; bundle-wine.sh
+      # installs only the DLLs, so the file comes from the release the
+      # bundle's wine-build pins, checked against the mtld3d.so installed
+      # (the PE files are stripped).
+      - name: Add mtld3d.conf from the bundle's mtld3d release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP"
+          ref=$(sed -n 's|^wine-build: athei/wine-build@\([0-9a-f]\{40\}\) .*|\1|p' wine/BUILD-INFO.txt)
+          [ -n "$ref" ]
+          gh api "repos/athei/wine-build/contents/pins/redist.env?ref=$ref" -H 'Accept: application/vnd.github.raw' > redist.env
+          . ./redist.env
+          curl -fsSLo mtld3d.tar.xz "$MTLD3D_URL"
+          echo "$MTLD3D_SHA256  mtld3d.tar.xz" | shasum -a 256 -c
+          mkdir mtld3d
+          tar -xJf mtld3d.tar.xz -C mtld3d
+          cmp mtld3d/wine/aarch64-unix/mtld3d.so wine/wine/lib/wine/d3d9/mtld3d/aarch64-unix/mtld3d.so
+          cp mtld3d/mtld3d.conf wine/wine/lib/mtld3d.conf
       # The app carries what runs games; headers, import and static libraries,
       # the SDK tools, man pages and Wine's graphics tests stay in the bundle
       # artifact.
@@ -100,6 +120,7 @@ jobs:
           codesign --verify --strict --verbose "$app"
           codesign --verify --strict --verbose "$app/Contents/Resources/Wine/lib/wine/aarch64-unix/wine.app"
           ! /usr/libexec/PlistBuddy -c 'Print :LSApplicationCategoryType' "$app/Contents/Info.plist"
+          test -f "$app/Contents/Resources/Wine/lib/mtld3d.conf"
           tools/wine-runtime/validate.sh --runtime "$app/Contents/Resources/Wine"
       - name: Package
         run: |

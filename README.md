@@ -64,9 +64,13 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   schedule whatever its minimum interval, so the timeline has a schedule of
   its own.
 
-The app leaves out what only building against Wine or testing it needs:
-`include`, the import and static libraries, the SDK tools in `bin`, the man
-pages and `lib/wine/tests`, about 150 MB. The bundle artifact keeps them.
+The app adds `lib/mtld3d.conf` to the bundle, which the patcher copies into
+the game and `bundle-wine.sh` does not install: from the mtld3d release the
+bundle's wine-build pins, after checking that its `mtld3d.so` is the one
+installed. The app leaves out what only building against Wine or testing it
+needs: `include`, the import and static libraries, the SDK tools in `bin`,
+the man pages and `lib/wine/tests`, about 150 MB. The bundle artifact keeps
+them.
 
 x87 needs no app setting: FEX runs the game's x87 code, and the Rosetta x87
 paths the app passes are ignored by this Wine.
