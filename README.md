@@ -24,11 +24,12 @@ a separate artifact.
 
 ## FEX
 
-`patches/fex/0001` makes the whole last page of an executable image section
-executable, as Windows' page protection does, instead of stopping at its
-`VirtualSize`. WoWSilicon's patched `DivxDecoder.dll` (the hook that loads
-`libDllLdr.dll`) puts its entry point in the slack after `.text`, and FEX
-faulted on it.
+`patches/fex` is empty. Its `0001` made the whole last page of an executable
+image section executable instead of stopping at its `VirtualSize`:
+WoWSilicon's patched `DivxDecoder.dll` (the hook that loads `libDllLdr.dll`)
+puts its entry point in the slack after `.text`, and FEX faulted on it.
+`athei/FEX` `d10f383b77` gives such a section the range Wine protects, its
+size rounded up to the section alignment, which covers that page.
 
 ## The app
 
@@ -58,8 +59,10 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
 - `0005` draws the dashboard's moving background and the Play button's
   gradient from a timeline at ten frames a second instead of repeating
   animations, and pauses the timeline while the window is inactive or the
-  game runs. The animations redrew on every display refresh: about 30 % CPU
-  while the window is in front, 12–17 % with the timeline.
+  game runs. The animations redrew on every display refresh, about 30 % CPU
+  while the window is in front, and so does a `TimelineView` on an animation
+  schedule whatever its minimum interval, so the timeline has a schedule of
+  its own.
 
 The app leaves out what only building against Wine or testing it needs:
 `include`, the import and static libraries, the SDK tools in `bin`, the man

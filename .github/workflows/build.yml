@@ -89,6 +89,8 @@ jobs:
       # the patched FEX is a local repository.
       - name: Apply this repository's patches
         run: |
+          # A patch directory may be empty or absent.
+          shopt -s nullglob
           commit() {
             git -C "$1" add -A
             git -C "$1" -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
@@ -198,7 +200,7 @@ jobs:
           {
             echo "wine: athei/wine@$(git -C src rev-parse HEAD~$(ls ci/patches/wine/*.patch | wc -l | tr -d ' ')) + $(ls ci/patches/wine | tr '\n' ' ')"
             echo "wine-build: athei/wine-build@$(git -C scripts rev-parse "HEAD~$(( $(ls ci/patches/wine-build/*.patch | wc -l) + 1 ))") + $(ls ci/patches/wine-build | tr '\n' ' ')"
-            echo "fex: athei/FEX@$FEX_BASE + $(ls ci/patches/fex | tr '\n' ' ')"
+            echo "fex: athei/FEX@$FEX_BASE + $([ -d ci/patches/fex ] && ls ci/patches/fex | tr '\n' ' ')"
             echo "loader: wine.app of athei/wine-build ${{ inputs.loader_release }}"
             echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
             echo "sdk: $(xcrun --show-sdk-version)"

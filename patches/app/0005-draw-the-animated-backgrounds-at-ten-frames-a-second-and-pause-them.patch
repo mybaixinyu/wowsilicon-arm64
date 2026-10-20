@@ -47,10 +47,10 @@ index 069035c..ca9e40b 100644
          } else {
              Color(nsColor: .windowBackgroundColor)
 diff --git a/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift b/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift
-index 480c268..0809a7f 100644
+index 480c268..ac75638 100644
 --- a/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift
 +++ b/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift
-@@ -1,34 +1,41 @@
+@@ -1,34 +1,58 @@
  import SwiftUI
  
 -struct ECOAnimationModifier: ViewModifier {
@@ -61,9 +61,10 @@ index 480c268..0809a7f 100644
 -    var trigger: Bool
 -    
 +/// Draws its content with a phase that goes from 0 to 1 and back, `duration`
-+/// seconds each way, at most `framesPerSecond` times a second, and not at all
-+/// while the window is inactive or the game runs. A repeating animation
-+/// redrew on every display refresh and did not stop when its value changed.
++/// seconds each way, `framesPerSecond` times a second, and not at all while
++/// the window is inactive or the game runs. A repeating animation, and a
++/// TimelineView on an animation schedule whatever its minimum interval,
++/// redraws the window on every display refresh.
 +struct ECOPhaseView<Content: View>: View {
 +
 +    static var framesPerSecond: Double { 10 }
@@ -99,20 +100,34 @@ index 480c268..0809a7f 100644
 -            }
 +
 +    var body: some View {
-+        TimelineView(.animation(minimumInterval: 1 / Self.framesPerSecond, paused: isPaused)) { context in
++        TimelineView(ECOSchedule(interval: 1 / Self.framesPerSecond, isPaused: isPaused)) { context in
 +            content(phase(at: context.date))
 +        }
-     }
--}
- 
--extension View {
--    
--    func ecoAnimation(_ animation: Animation?, trigger: Binding<Bool>) -> some View {
--        modifier(ECOAnimationModifier(animation: animation, trigger: trigger))
++    }
++
 +    private func phase(at date: Date) -> Double {
 +        let time = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2 * duration) / duration
 +        let phase = time <= 1 ? time : 2 - time
 +        return easeInOut ? phase * phase * (3 - 2 * phase) : phase
+     }
+ }
+ 
+-extension View {
++/// An entry every `interval` seconds, or only the first one while paused.
++private struct ECOSchedule: TimelineSchedule {
++    
++    let interval: TimeInterval
++    
++    let isPaused: Bool
+     
+-    func ecoAnimation(_ animation: Animation?, trigger: Binding<Bool>) -> some View {
+-        modifier(ECOAnimationModifier(animation: animation, trigger: trigger))
++    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
++        var next: Date? = startDate
++        return AnyIterator {
++            defer { next = isPaused ? nil : next?.addingTimeInterval(interval) }
++            return next
++        }
      }
  }
 diff --git a/Sources/WoWSiliconSwift/Views/Modifiers/PlayButtonStyle.swift b/Sources/WoWSiliconSwift/Views/Modifiers/PlayButtonStyle.swift
