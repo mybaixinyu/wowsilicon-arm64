@@ -90,6 +90,10 @@ Wine of another version needs a release of that version.
 wine-arm64-ci's own (`0007`, `0008`); the list, and the ones left out and
 why, is in
 [wine-arm64-ci](https://github.com/mybaixinyu/wine-arm64-ci#patches).
+`0009` is CrossOver's Mac Edit menu ("CW HACK 10912", WineAndAqua/wine
+`aa34ecbe71`), which the Wine that WoWSilicon ships is built from and
+`athei/wine` is not: Command-C/V/X/A/Z reach the program as Control-C/V/X/A/Z
+while Command stays Alt for every other key.
 
 ## Run
 
