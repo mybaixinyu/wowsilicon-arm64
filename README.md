@@ -57,12 +57,14 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   poll, and a 60-second poll is the fallback. That cost showed as
   WoWSilicon at 5–27 % CPU beside the game.
 - `0005` draws the dashboard's moving background and the Play button's
-  gradient from a timeline at ten frames a second instead of repeating
-  animations, and pauses the timeline while the window is inactive or the
-  game runs. The animations redrew on every display refresh, about 30 % CPU
-  while the window is in front, and so does a `TimelineView` on an animation
-  schedule whatever its minimum interval, so the timeline has a schedule of
-  its own.
+  gradient from a state it advances ten times a second instead of
+  repeating animations, and stops advancing it while the window is
+  inactive or the game runs. The animations redrew on every display
+  refresh, about 30 % CPU while the window is in front. A `TimelineView`
+  does too at more than four entries a second, whatever its schedule:
+  `NSHostingView.requestUpdate(after:)` updates on the next frame for any
+  delay under 0.25 s (13 % CPU with a 10 Hz schedule, 55 commits a
+  second).
 - `0006` keeps `winerosetta` and then `libSiliconPatch` at the top of the
   game's `dlls.txt`, the load order wow_optimize asks for. Patch appended
   them after whatever the file held, so Unpatch and Patch put a
