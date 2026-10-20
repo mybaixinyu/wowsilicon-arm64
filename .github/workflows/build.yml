@@ -16,7 +16,7 @@ on:
     inputs:
       wine_build_ref:
         description: athei/wine-build full commit SHA (or branch) whose scripts and pins build it
-        default: 2843bd03a326eefa4ebcf51245eb0ec8013ecb92
+        default: e1f8349a469eed4c9f18e660f74cb43d5808a620
         type: string
       wine_ref:
         description: athei/wine ref to build instead of pins/wine-src.ref (empty for the pin)
@@ -28,7 +28,7 @@ on:
         type: string
       loader_release:
         description: athei/wine-build release whose signed wine.app is bundled
-        default: arm64-11.19-2
+        default: arm64-11.19-3
         type: string
 
 permissions:
@@ -43,19 +43,16 @@ defaults:
 
 jobs:
   build:
-    # Not release.yml's macos-26: arm64-11.19-2 was built locally with
-    # Xcode 27 (its notes say so), and only that linker makes its loader.
-    # Back to macos-26 once loader_release is a release built there.
-    runs-on: xcode-27
+    runs-on: macos-26
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           path: ci
       # The scripts take the workspace, the parent of scripts/, as the root of
       # their layout: the Wine source in src/, downloads in cache/, the trees
       # under build/ and the bundle in dist/.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: athei/wine-build
           ref: ${{ inputs.wine_build_ref }}
@@ -73,7 +70,7 @@ jobs:
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
       # The whole history without file contents: the build writes `git
       # describe` into ntdll, and the notes name it.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: athei/wine
           ref: ${{ steps.ref.outputs.ref }}
@@ -161,7 +158,7 @@ jobs:
           echo "llvm15=dxmt-llvm15-$LLVM15_GIT_COMMIT-floor$MACOS_FLOOR-xcode$xcode-$ImageOS-$llvm15" >> "$GITHUB_OUTPUT"
           echo "redist=redist-$redist" >> "$GITHUB_OUTPUT"
       - name: Cache the pinned downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: cache
           key: ${{ steps.keys.outputs.redist }}
@@ -172,7 +169,7 @@ jobs:
       - name: Add the Rust target
         run: rustup target add aarch64-apple-darwin
       - name: Cache the cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -180,7 +177,7 @@ jobs:
           key: cargo-${{ hashFiles('scripts/compatdb/Cargo.lock') }}
       - name: Restore DXMT's LLVM
         id: llvm15-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: build/dxmt/llvm15
           key: ${{ steps.keys.outputs.llvm15 }}
@@ -188,15 +185,12 @@ jobs:
         run: scripts/bin/build-wine.sh --clean
       - name: Save DXMT's LLVM
         if: always() && steps.llvm15-cache.outputs.cache-hit != 'true' && hashFiles('build/dxmt/llvm15/COMMIT') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: build/dxmt/llvm15
           key: ${{ steps.keys.outputs.llvm15 }}
       - name: Bundle
-        # Without release.yml's --strict-floor: macOS 27's bottles carry minos
-        # 27.0, which wine-build reports as a warning for a build that is not
-        # distributed. Back with macos-26 (see runs-on).
-        run: scripts/bin/bundle-wine.sh --symbols --yes
+        run: scripts/bin/bundle-wine.sh --strict-floor --symbols --yes
       - name: Package
         run: |
           name="wowsilicon-arm64-$(git -C src describe --tags --always)"
@@ -212,7 +206,7 @@ jobs:
           cat "$RUNNER_TEMP/release/notes.md"
           (cd "$RUNNER_TEMP/release" && shasum -a 256 "wine-$name-macos-arm64.tar.xz" | tee "wine-$name-macos-arm64.tar.xz.sha256")
           echo "NAME=$name" >> "$GITHUB_ENV"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.NAME }}
           path: |
@@ -223,7 +217,7 @@ jobs:
           compression-level: 0
           retention-days: 30
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: symbols-${{ env.NAME }}
           path: ${{ runner.temp }}/release/wine-${{ env.NAME }}-macos-arm64-symbols.tar.xz

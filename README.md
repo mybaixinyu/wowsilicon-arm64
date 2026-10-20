@@ -7,15 +7,8 @@ release of either.
 
 `build.yml` builds the bundle the way wine-build's own `release.yml` does:
 the same layout, `bin/ci` scripts, Homebrew action, caches and
-`bundle-wine.sh --symbols`, then `package.sh`. On top of it:
-
-- It runs on `xcode-27`, not `macos-26`: the signed loader comes from a
-  release the author built locally with Xcode 27, and Xcode 26's linker
-  writes a different `__unwind_info`, which the loader comparison refuses.
-  macOS 27's Homebrew bottles then carry minos 27.0, so the bundle is built
-  without `--strict-floor`, as wine-build does for a local build that is
-  not distributed; it runs on macOS 27 only. Once the loader comes from a
-  release built in CI on `macos-26`, both go back to `release.yml`'s.
+`bundle-wine.sh --strict-floor --symbols`, then `package.sh`, on
+`macos-26`. On top of it:
 
 - Wine is the ref in wine-build's `pins/wine-src.ref` (or `wine_ref`), plus
   `patches/wine`; FEX is the ref in `pins/fex-src.ref` (or `fex_ref`), plus
@@ -65,9 +58,8 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
 - `0005` draws the dashboard's moving background and the Play button's
   gradient from a timeline at ten frames a second instead of repeating
   animations, and pauses the timeline while the window is inactive or the
-  game runs. The animations redrew on every display refresh and kept running
-  in the background, though they were meant to stop: about 30 % CPU with
-  another application in front.
+  game runs. The animations redrew on every display refresh: about 30 % CPU
+  while the window is in front, 12–17 % with the timeline.
 
 The app leaves out what only building against Wine or testing it needs:
 `include`, the import and static libraries, the SDK tools in `bin`, the man
@@ -92,10 +84,12 @@ Wine of another version needs a release of that version.
 ## Patches
 
 `patches/wine` are WoWSilicon's patches (`WoWSilicon/WoWSilicon`,
-`Packaging/WineRuntime/patches/`) rebased onto `athei/wine`, and two of
-wine-arm64-ci's own (`0007`, `0008`); the list, and the ones left out and
-why, is in
+`Packaging/WineRuntime/patches/`) rebased onto `athei/wine`; the list, and
+the ones left out and why, is in
 [wine-arm64-ci](https://github.com/mybaixinyu/wine-arm64-ci#patches).
+`athei/wine` has since taken `0005` (GCMouse raw input, on through compatdb's
+`gcmouse` rule), `0007` (the input method window) and `0008` (the
+presentation options while inactive), so they are gone here.
 `0009` is CrossOver's Mac Edit menu ("CW HACK 10912", WineAndAqua/wine
 `aa34ecbe71`), which the Wine that WoWSilicon ships is built from and
 `athei/wine` is not: Command-C/V/X/A/Z reach the program as Control-C/V/X/A/Z

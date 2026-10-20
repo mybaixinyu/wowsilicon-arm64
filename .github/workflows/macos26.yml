@@ -1,8 +1,7 @@
 name: macos26
 
-# Runs an app.yml artifact on a macos-26 runner. The bundle is built on
-# xcode-27, whose Homebrew bottles carry minos 27.0 (see build.yml), so this
-# checks that it still loads and runs on macOS 26: every library in
+# Runs an app.yml artifact on a macos-26 runner, the oldest macOS the bundle
+# supports (build.yml bundles with --strict-floor): every library in
 # lib/external with all symbols bound, a new prefix, a 64-bit and a 32-bit
 # program, and the app itself. Manual only.
 on:
@@ -49,7 +48,7 @@ jobs:
       # dependency bound at once (RTLD_NOW), so a symbol macOS 26 lacks fails.
       - name: Load every library in lib/external
         run: |
-          curl -fsSL -o dlopen.c https://raw.githubusercontent.com/athei/wine-build/2843bd03a326eefa4ebcf51245eb0ec8013ecb92/smoke/dlopen.c
+          curl -fsSL -o dlopen.c https://raw.githubusercontent.com/athei/wine-build/e1f8349a469eed4c9f18e660f74cb43d5808a620/smoke/dlopen.c
           clang -target arm64-apple-macos26.4 -o dlopen dlopen.c
           ext="$APP/Contents/Resources/Wine/lib/external"
           for f in "$ext"/*.dylib; do
