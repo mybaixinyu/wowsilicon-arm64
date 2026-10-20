@@ -1,0 +1,90 @@
+diff --git a/Sources/WoWSiliconSwift/Services/ModService.swift b/Sources/WoWSiliconSwift/Services/ModService.swift
+index abe2395..66e2b7f 100644
+--- a/Sources/WoWSiliconSwift/Services/ModService.swift
++++ b/Sources/WoWSiliconSwift/Services/ModService.swift
+@@ -227,7 +227,7 @@ enum ModService {
+ 
+     private static func writeDllsFile(enabledMods: Set<String>, gamePath: String) throws {
+         let dllsURL = gameDirectoryURL(from: gamePath).appendingPathComponent("dlls.txt")
+-        let lines = enabledMods.sorted()
++        let lines = PatchService.inLoadOrder(enabledMods.sorted())
+         do {
+             try lines.joined(separator: "\n").appending("\n").write(to: dllsURL, atomically: true, encoding: .utf8)
+         } catch {
+diff --git a/Sources/WoWSiliconSwift/Services/PatchService.swift b/Sources/WoWSiliconSwift/Services/PatchService.swift
+index 6445aa0..5d99c97 100644
+--- a/Sources/WoWSiliconSwift/Services/PatchService.swift
++++ b/Sources/WoWSiliconSwift/Services/PatchService.swift
+@@ -460,9 +460,26 @@ enum PatchService {
+             }
+         }
+ 
++        let lines = content.split(whereSeparator: { $0.isNewline }).map(String.init)
++        content = inLoadOrder(lines).joined(separator: "\n") + "\n"
+         try content.write(to: dllsURL, atomically: true, encoding: .utf8)
+     }
+ 
++    /// `entries` with winerosetta first and libSiliconPatch second, the rest in
++    /// their order after them: wow_optimize has to load after both.
++    static func inLoadOrder(_ entries: [String]) -> [String] {
++        func rank(_ entry: String) -> Int {
++            switch entry.trimmingCharacters(in: .whitespaces).lowercased() {
++            case "mods/winerosetta.dll": return 0
++            case "mods/libsiliconpatch.dll", "libsiliconpatch.dll": return 1
++            default: return 2
++            }
++        }
++        return entries.enumerated()
++            .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
++            .map(\.element)
++    }
++
+     private static func removeDllEntries(in gameDirectory: URL) throws {
+         let dllsURL = gameDirectory.appendingPathComponent("dlls.txt")
+         guard let content = try? String(contentsOf: dllsURL) else {
+diff --git a/Tests/WoWSiliconSwiftTests/ModServiceTests.swift b/Tests/WoWSiliconSwiftTests/ModServiceTests.swift
+index 134fe75..e7b2087 100644
+--- a/Tests/WoWSiliconSwiftTests/ModServiceTests.swift
++++ b/Tests/WoWSiliconSwiftTests/ModServiceTests.swift
+@@ -47,6 +47,21 @@ final class ModServiceTests: XCTestCase {
+         XCTAssertThrowsError(try ModService.installMod(from: sourceURL, version: makeVersion(gameURL: gameURL), supportsDLL: true))
+     }
+ 
++    func testInstallModKeepsLauncherModsFirst() throws {
++        let gameURL = try makeTemporaryDirectory()
++        try "mods/wow_optimize.dll\nmods/winerosetta.dll\nmods/libSiliconPatch.dll\n"
++            .write(to: gameURL.appendingPathComponent("dlls.txt"), atomically: true, encoding: .utf8)
++        let sourceURL = try makeTemporaryDirectory().appendingPathComponent("example.dll")
++        try Data([0x01]).write(to: sourceURL)
++
++        _ = try ModService.installMod(from: sourceURL, version: makeVersion(gameURL: gameURL), supportsDLL: true)
++
++        XCTAssertEqual(
++            try String(contentsOf: gameURL.appendingPathComponent("dlls.txt"), encoding: .utf8),
++            "mods/winerosetta.dll\nmods/libSiliconPatch.dll\nmods/example.dll\nmods/wow_optimize.dll\n"
++        )
++    }
++
+     private func makeVersion(gameURL: URL) -> GameVersion {
+         GameVersion(
+             id: "test",
+diff --git a/Tests/WoWSiliconSwiftTests/PatchServiceTests.swift b/Tests/WoWSiliconSwiftTests/PatchServiceTests.swift
+index fc4f5e3..0c19b56 100644
+--- a/Tests/WoWSiliconSwiftTests/PatchServiceTests.swift
++++ b/Tests/WoWSiliconSwiftTests/PatchServiceTests.swift
+@@ -184,6 +184,15 @@ final class PatchServiceTests: XCTestCase {
+         )
+     }
+ 
++    func testInLoadOrderPutsLauncherModsFirst() {
++        XCTAssertEqual(
++            PatchService.inLoadOrder([
++                "mods/wow_optimize.dll", "mods/libSiliconPatch.dll", "mods/other.dll", "mods/winerosetta.dll",
++            ]),
++            ["mods/winerosetta.dll", "mods/libSiliconPatch.dll", "mods/wow_optimize.dll", "mods/other.dll"]
++        )
++    }
++
+     private func makeTemporaryDirectory() -> URL {
+         let url = FileManager.default.temporaryDirectory
+             .appendingPathComponent("WoWSiliconPatchTests-\(UUID().uuidString)", isDirectory: true)

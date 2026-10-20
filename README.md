@@ -63,6 +63,11 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   while the window is in front, and so does a `TimelineView` on an animation
   schedule whatever its minimum interval, so the timeline has a schedule of
   its own.
+- `0006` keeps `winerosetta` and then `libSiliconPatch` at the top of the
+  game's `dlls.txt`, the load order wow_optimize asks for. Patch appended
+  them after whatever the file held, so Unpatch and Patch put a
+  wow_optimize entry first, and the Mods panel rewrote the file sorted,
+  with `libSiliconPatch` before `winerosetta`.
 
 The app adds `lib/mtld3d.conf` to the bundle, which the patcher copies into
 the game and `bundle-wine.sh` does not install: from the mtld3d release the
