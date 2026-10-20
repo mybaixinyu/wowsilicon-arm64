@@ -26,13 +26,13 @@ permissions:
 
 jobs:
   app:
-    runs-on: xcode-27
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           path: ci
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: WoWSilicon/WoWSilicon
           ref: ${{ inputs.app_ref }}
@@ -41,14 +41,14 @@ jobs:
         run: for p in "$GITHUB_WORKSPACE"/ci/patches/app/*.patch; do git -C app apply --verbose "$p"; done
       - name: Wine bundle from this run
         if: inputs.wine_run_id == ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: wowsilicon-arm64-*
           path: ${{ runner.temp }}/wine
           merge-multiple: true
       - name: Wine bundle from run ${{ inputs.wine_run_id }}
         if: inputs.wine_run_id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: wowsilicon-arm64-*
           path: ${{ runner.temp }}/wine
@@ -113,7 +113,7 @@ jobs:
           tar -C app/.build -cJf "$name.tar.xz" WoWSilicon.app BUILD-INFO.txt
           shasum -a 256 "$name.tar.xz" | tee "$name.tar.xz.sha256"
           echo "NAME=$name" >> "$GITHUB_ENV"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.NAME }}
           path: |

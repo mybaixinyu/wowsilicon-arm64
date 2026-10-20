@@ -1,0 +1,169 @@
+diff --git a/Sources/WoWSiliconSwift/Views/DashboardBackgroundView.swift b/Sources/WoWSiliconSwift/Views/DashboardBackgroundView.swift
+index 069035c..ca9e40b 100644
+--- a/Sources/WoWSiliconSwift/Views/DashboardBackgroundView.swift
++++ b/Sources/WoWSiliconSwift/Views/DashboardBackgroundView.swift
+@@ -1,28 +1,24 @@
+ import SwiftUI
+ 
+ struct DashboardBackgroundView: View {
+-    
+-    @State var isAnimating = false
+-    
++
+     let gold = Color(red: 1.0, green: 0.84, blue: 0.0).opacity(0.75)
+-    
++
+     var body: some View {
+         if #available(macOS 15.0, *) {
+-            MeshGradient(width: 3, height: 3, points: [
+-                [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
+-                [0.0, 0.5], [isAnimating ? 0.1 : 0.8, 0.5], [1.0, isAnimating ? 0.5 : 1],
+-                [0.0, 1.0], [0.5, 1.0], [1.0, 1.0]
+-            ], colors: [
+-                isAnimating ? .blue : .blue, gold, .blue,
+-            ])
+-            .padding(-40)
+-            .blur(radius: 20)
+-            .opacity(0.5)
+-            .background(.background)
+-            .drawingGroup(opaque: true)
+-            .ecoAnimation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true), trigger: $isAnimating)
+-            .onAppear {
+-                isAnimating.toggle()
++            ECOPhaseView(duration: 3.0, easeInOut: true) { phase in
++                MeshGradient(width: 3, height: 3, points: [
++                    [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
++                    [0.0, 0.5], [Float(0.8 - 0.7 * phase), 0.5], [1.0, Float(1.0 - 0.5 * phase)],
++                    [0.0, 1.0], [0.5, 1.0], [1.0, 1.0]
++                ], colors: [
++                    .blue, gold, .blue,
++                ])
++                .padding(-40)
++                .blur(radius: 20)
++                .opacity(0.5)
++                .background(.background)
++                .drawingGroup(opaque: true)
+             }
+         } else {
+             Color(nsColor: .windowBackgroundColor)
+diff --git a/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift b/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift
+index 480c268..0809a7f 100644
+--- a/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift
++++ b/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift
+@@ -1,34 +1,41 @@
+ import SwiftUI
+ 
+-struct ECOAnimationModifier: ViewModifier {
+-    
+-    let animation: Animation?
+-    
+-    @Binding
+-    var trigger: Bool
+-    
++/// Draws its content with a phase that goes from 0 to 1 and back, `duration`
++/// seconds each way, at most `framesPerSecond` times a second, and not at all
++/// while the window is inactive or the game runs. A repeating animation
++/// redrew on every display refresh and did not stop when its value changed.
++struct ECOPhaseView<Content: View>: View {
++
++    static var framesPerSecond: Double { 10 }
++
++    let duration: Double
++
++    var easeInOut = false
++
++    var isEnabled = true
++
++    @ViewBuilder
++    let content: (Double) -> Content
++
+     @Environment(\.isGameRunning)
+     private var isGameRunning
+-    
++
+     @Environment(\.appearsActive)
+     private var appearsActive
+-    
+-    private var isEnabled: Bool {
+-        appearsActive && !isGameRunning
++
++    private var isPaused: Bool {
++        !isEnabled || !appearsActive || isGameRunning
+     }
+-    
+-    func body(content: Content) -> some View {
+-        content
+-            .animation(isEnabled ? animation : .default, value: trigger)
+-            .onChange(of: isEnabled) {
+-                trigger.toggle()
+-            }
++
++    var body: some View {
++        TimelineView(.animation(minimumInterval: 1 / Self.framesPerSecond, paused: isPaused)) { context in
++            content(phase(at: context.date))
++        }
+     }
+-}
+ 
+-extension View {
+-    
+-    func ecoAnimation(_ animation: Animation?, trigger: Binding<Bool>) -> some View {
+-        modifier(ECOAnimationModifier(animation: animation, trigger: trigger))
++    private func phase(at date: Date) -> Double {
++        let time = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2 * duration) / duration
++        let phase = time <= 1 ? time : 2 - time
++        return easeInOut ? phase * phase * (3 - 2 * phase) : phase
+     }
+ }
+diff --git a/Sources/WoWSiliconSwift/Views/Modifiers/PlayButtonStyle.swift b/Sources/WoWSiliconSwift/Views/Modifiers/PlayButtonStyle.swift
+index 78a9cbe..6a65193 100644
+--- a/Sources/WoWSiliconSwift/Views/Modifiers/PlayButtonStyle.swift
++++ b/Sources/WoWSiliconSwift/Views/Modifiers/PlayButtonStyle.swift
+@@ -2,9 +2,6 @@ import SwiftUI
+ 
+ struct PlayButtonStyle: ButtonStyle {
+     
+-    @State
+-    private var animateToggle = false
+-    
+     @Environment(\.isEnabled)
+     private var isEnabled
+     
+@@ -17,21 +14,26 @@ struct PlayButtonStyle: ButtonStyle {
+             .padding(.vertical, 20)
+             .padding(.horizontal, 32)
+             .background {
+-                RoundedRectangle(cornerRadius: 20)
+-                    .fill(LinearGradient(gradient: .init(colors: animateToggle ? colors : colors.reversed()), startPoint: .topLeading, endPoint: .bottomTrailing))
+-                    .overlay {
+-                        RoundedRectangle(cornerRadius: 20)
+-                            .stroke(.white.opacity(0.2), lineWidth: 1)
+-                    }
+-                    .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+-                    .ecoAnimation(isEnabled ? .linear(duration: 3.0).repeatForever(autoreverses: true) : .none, trigger: $animateToggle)
++                ECOPhaseView(duration: 3.0, isEnabled: isEnabled) { phase in
++                    RoundedRectangle(cornerRadius: 20)
++                        .fill(LinearGradient(gradient: .init(colors: gradientColors(phase)), startPoint: .topLeading, endPoint: .bottomTrailing))
++                        .overlay {
++                            RoundedRectangle(cornerRadius: 20)
++                                .stroke(.white.opacity(0.2), lineWidth: 1)
++                        }
++                        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
++                }
+             }
+             .saturation(isEnabled ? 1 : 0.5)
+             .opacity(!isEnabled ? 0.6 : (configuration.isPressed ? 0.8 : 1.0))
+             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+-            .onAppear {
+-                animateToggle.toggle()
+-            }
++    }
++    
++    private func gradientColors(_ phase: Double) -> [Color] {
++        guard #available(macOS 15.0, *) else {
++            return phase < 0.5 ? colors.reversed() : colors
++        }
++        return [colors[1].mix(with: colors[0], by: phase), colors[0].mix(with: colors[1], by: phase)]
+     }
+ }
+ 

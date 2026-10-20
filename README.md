@@ -62,6 +62,12 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   WoWSilicon started runs, it does not poll: that process's exit requests a
   poll, and a 60-second poll is the fallback. That cost showed as
   WoWSilicon at 5–27 % CPU beside the game.
+- `0005` draws the dashboard's moving background and the Play button's
+  gradient from a timeline at ten frames a second instead of repeating
+  animations, and pauses the timeline while the window is inactive or the
+  game runs. The animations redrew on every display refresh and kept running
+  in the background, though they were meant to stop: about 30 % CPU with
+  another application in front.
 
 The app leaves out what only building against Wine or testing it needs:
 `include`, the import and static libraries, the SDK tools in `bin`, the man
