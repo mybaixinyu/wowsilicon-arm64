@@ -47,10 +47,10 @@ index 069035c..ca9e40b 100644
          } else {
              Color(nsColor: .windowBackgroundColor)
 diff --git a/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift b/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift
-index 480c268..04fdba5 100644
+index 480c268..19a7bec 100644
 --- a/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift
 +++ b/Sources/WoWSiliconSwift/Views/Modifiers/ForegroundAnimation.swift
-@@ -1,34 +1,57 @@
+@@ -1,34 +1,89 @@
  import SwiftUI
  
 -struct ECOAnimationModifier: ViewModifier {
@@ -61,14 +61,12 @@ index 480c268..04fdba5 100644
 -    var trigger: Bool
 -    
 +/// Draws its content with a phase that goes from 0 to 1 and back, `duration`
-+/// seconds each way, `framesPerSecond` times a second, and not at all while
-+/// the window is inactive or the game runs. A repeating animation, and a
-+/// TimelineView whose next entry is less than 0.25 s away, redraws the
-+/// window on every display refresh: NSHostingView updates on the next
-+/// frame for any shorter delay. A state change draws one frame.
++/// seconds each way, from ECOClock, and not at all while the window is
++/// inactive or the game runs; disabled, at phase 0. A repeating animation,
++/// and a TimelineView whose next entry is less than 0.25 s away, redraws the
++/// window on every display refresh: NSHostingView updates on the next frame
++/// for any shorter delay.
 +struct ECOPhaseView<Content: View>: View {
-+
-+    static var framesPerSecond: Double { 10 }
 +
 +    let duration: Double
 +
@@ -99,35 +97,68 @@ index 480c268..04fdba5 100644
 -            .onChange(of: isEnabled) {
 -                trigger.toggle()
 +
-+    @State
-+    private var date = Date()
-+
 +    var body: some View {
-+        content(phase(at: date))
++        content(isEnabled ? phase(at: ECOClock.shared.date) : 0)
 +            .task(id: isPaused) { [isPaused] in
 +                guard !isPaused else {
 +                    return
 +                }
-+                while true {
-+                    date = Date()
-+                    do {
-+                        try await Task.sleep(for: .seconds(1 / Self.framesPerSecond))
-+                    } catch {
-+                        return
-+                    }
++                ECOClock.shared.retain()
++                defer { ECOClock.shared.release() }
++                while !Task.isCancelled {
++                    try? await Task.sleep(for: .seconds(3600))
 +                }
              }
      }
--}
++
++    private func phase(at date: Date) -> Double {
++        let time = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2 * duration) / duration
++        let phase = time <= 1 ? time : 2 - time
++        return easeInOut ? phase * phase * (3 - 2 * phase) : phase
++    }
+ }
  
 -extension View {
 -    
 -    func ecoAnimation(_ animation: Animation?, trigger: Binding<Bool>) -> some View {
 -        modifier(ECOAnimationModifier(animation: animation, trigger: trigger))
-+    private func phase(at date: Date) -> Double {
-+        let time = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2 * duration) / duration
-+        let phase = time <= 1 ? time : 2 - time
-+        return easeInOut ? phase * phase * (3 - 2 * phase) : phase
++/// The date every ECOPhaseView draws from, advanced ten times a second while
++/// one of them runs. One clock changes them all in the same frame; a clock
++/// each drew twice as many frames.
++@MainActor
++@Observable
++final class ECOClock {
++
++    static let shared = ECOClock()
++
++    private(set) var date = Date()
++
++    @ObservationIgnored
++    private var users = 0
++
++    @ObservationIgnored
++    private var ticker: Task<Void, Never>?
++
++    func retain() {
++        users += 1
++        guard ticker == nil else {
++            return
++        }
++        ticker = Task {
++            while !Task.isCancelled {
++                date = Date()
++                try? await Task.sleep(for: .seconds(0.1))
++            }
++        }
++    }
++
++    func release() {
++        users -= 1
++        guard users == 0 else {
++            return
++        }
++        ticker?.cancel()
++        ticker = nil
      }
  }
 diff --git a/Sources/WoWSiliconSwift/Views/Modifiers/PlayButtonStyle.swift b/Sources/WoWSiliconSwift/Views/Modifiers/PlayButtonStyle.swift

@@ -57,9 +57,10 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   poll, and a 60-second poll is the fallback. That cost showed as
   WoWSilicon at 5–27 % CPU beside the game.
 - `0005` draws the dashboard's moving background and the Play button's
-  gradient from a state it advances ten times a second instead of
-  repeating animations, and stops advancing it while the window is
-  inactive or the game runs. The animations redrew on every display
+  gradient from one shared clock it advances ten times a second instead
+  of repeating animations, and stops it while the window is inactive or
+  the game runs. A clock each drew twice as many frames, at different
+  times. The animations redrew on every display
   refresh, about 30 % CPU while the window is in front. A `TimelineView`
   does too at more than four entries a second, whatever its schedule:
   `NSHostingView.requestUpdate(after:)` updates on the next frame for any
