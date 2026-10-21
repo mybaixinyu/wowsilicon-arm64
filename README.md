@@ -75,7 +75,11 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
 `libSiliconPatch` for 3.3.5a and `libDllLdr` come from WoWSilicon's
 `Preview3.3.0` release, which has no source, checked against the hashes in
 `app.yml`. That `libSiliconPatch` takes over functions of its own that
-wow_optimize then leaves alone (it checks their first bytes). `libDllLdr`
+wow_optimize then leaves alone (it checks their first bytes). Its
+replacement for the lowpass DSP's coefficient update (`0x8F2C70`) is hooked
+without the thunk that keeps ECX for the other replacements, and the sound
+mixer crashed on the ECX it returned with; `app.yml` routes that hook through
+such a thunk. `libDllLdr`
 also patches `DivxDecoder.dll`, and now extends `.text` over the entry
 point it adds. 3.3.0 has no `winerosetta` any more; 3.2.2's stays, since
 the app requires it.

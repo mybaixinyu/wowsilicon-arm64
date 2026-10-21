@@ -56,6 +56,24 @@ jobs:
           76bcddae2fe04c407f197910c323731fa623763289254b319e03c0e3fb079565  $to/libSiliconPatch/wotlk/libSiliconPatch.dll
           f7ac6193767e092bd6c972cd6203a08bd969275a5c19df3e243b76a7c6007acd  $to/winerosetta/libDllLdr.dll
           EOF
+          # The replacement for the lowpass DSP's coefficient update (0x8F2C70)
+          # is hooked without the ECX-saving thunk the other replacements
+          # have, and its caller reads ECX after it: route it through one,
+          # written into the padding after a function, like theirs.
+          python3 -I - "$to/libSiliconPatch/wotlk/libSiliconPatch.dll" <<'EOF'
+          import struct, sys
+          path = sys.argv[1]
+          b = bytearray(open(path, 'rb').read())
+          entry, cave = 0xB1020, 0x12310
+          assert struct.unpack_from('<II', b, entry) == (0x8F2C70, 0x62388D10)
+          assert b[cave - 2:cave + 20] == b'\x90' * 22
+          thunk_va = 0x62352F10
+          thunk = b'\x51\xff\x74\x24\x0c\xff\x74\x24\x0c\xe8' + struct.pack('<i', 0x62388D10 - (thunk_va + 14)) + b'\x59\xc2\x08\x00'
+          b[cave:cave + len(thunk)] = thunk
+          struct.pack_into('<I', b, entry + 4, thunk_va)
+          open(path, 'wb').write(b)
+          EOF
+          echo "b112d83db4dda8c334b85bf7f4adfdddc5a58e478b15734a012f616dc78307c0  $to/libSiliconPatch/wotlk/libSiliconPatch.dll" | shasum -a 256 -c
       - name: Wine bundle from this run
         if: inputs.wine_run_id == ''
         uses: actions/download-artifact@v8
@@ -140,8 +158,7 @@ jobs:
           test -f "$app/Contents/Resources/Wine/lib/mtld3d.conf"
           cmp "$RUNNER_TEMP/preview/WoWSilicon_3.3.0_Preview.app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Contents/Resources/Patching/DllLoader/libDllLdr.dll" \
             "$app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Patching/winerosetta/libDllLdr.dll"
-          cmp "$RUNNER_TEMP/preview/WoWSilicon_3.3.0_Preview.app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Contents/Resources/Patching/libSiliconPatch/wotlk/libSiliconPatch.dll" \
-            "$app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Patching/libSiliconPatch/wotlk/libSiliconPatch.dll"
+          echo "b112d83db4dda8c334b85bf7f4adfdddc5a58e478b15734a012f616dc78307c0  $app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Patching/libSiliconPatch/wotlk/libSiliconPatch.dll" | shasum -a 256 -c
           tools/wine-runtime/validate.sh --runtime "$app/Contents/Resources/Wine"
       - name: Package
         run: |
