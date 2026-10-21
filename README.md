@@ -84,6 +84,18 @@ also patches `DivxDecoder.dll`, and now extends `.text` over the entry
 point it adds. 3.3.0 has no `winerosetta` any more; 3.2.2's stays, since
 the app requires it.
 
+The DXVK backend comes from `Preview3.3.0` too: its DXVK 3.1.1
+(`Patching/dxvk-kosmickrisp`, 3.2.2 has a build of v3.0.2-74-g0dc6a2d) and
+its KosmicKrisp, the
+Vulkan driver the app looks for as `lib/vulkan/icd.d/KosmicKrisp_icd.json`
+and which the bundle did not have there, so the backend could not start.
+The driver, signed by LunarG, goes into `lib/vulkan` beside that manifest;
+the bundle's own KosmicKrisp in `lib/external`, which the rest of Wine's
+Vulkan loads, stays. Like `Preview3.3.0`, there is no MoltenVK, which in
+3.2.2 ran only the old D9VK 1.10.3 (`Patching/d9vk`): choose KosmicKrisp
+as the Vulkan driver in the app's graphics settings, where MoltenVK is the
+default.
+
 The app adds `lib/mtld3d.conf` to the bundle, which the patcher copies into
 the game and `bundle-wine.sh` does not install: from the mtld3d release the
 bundle's wine-build pins, after checking that its `mtld3d.so` is the one

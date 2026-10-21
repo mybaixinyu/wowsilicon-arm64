@@ -41,20 +41,28 @@ jobs:
         run: for p in "$GITHUB_WORKSPACE"/ci/patches/app/*.patch; do git -C app apply --verbose "$p"; done
       # WoWSilicon 3.3.0 ships only as a build, without its source. Its
       # libSiliconPatch for 3.3.5a and its libDllLdr, which also patches
-      # DivxDecoder.dll and keeps the entry point inside .text, replace 3.2.2's.
-      - name: Take libSiliconPatch and libDllLdr from WoWSilicon Preview3.3.0
+      # DivxDecoder.dll and keeps the entry point inside .text, replace 3.2.2's,
+      # and its DXVK 3.1.1 replaces 3.2.2's v3.0.2-74-g0dc6a2d. Its KosmicKrisp goes into the
+      # Wine bundle further down.
+      - name: Take libSiliconPatch, libDllLdr, DXVK and KosmicKrisp from WoWSilicon Preview3.3.0
         run: |
           cd "$RUNNER_TEMP"
           curl -fsSLo preview.zip https://github.com/WoWSilicon/WoWSilicon/releases/download/Preview3.3.0/WoWSilicon_3.3.0_Preview.zip
           echo "b9d7c9606c526903da017066dc643b656517fef368a3d14f39c1d7a417392e8a  preview.zip" | shasum -a 256 -c
           from=WoWSilicon_3.3.0_Preview.app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Contents/Resources/Patching
-          unzip -q preview.zip "$from/libSiliconPatch/wotlk/libSiliconPatch.dll" "$from/DllLoader/libDllLdr.dll" -d preview
+          kk=WoWSilicon_3.3.0_Preview.app/Contents/Resources/Wine/lib/external/libvulkan_kosmickrisp.dylib
+          unzip -q preview.zip "$from/libSiliconPatch/wotlk/libSiliconPatch.dll" "$from/DllLoader/libDllLdr.dll" \
+            "$from/dxvk-kosmickrisp/d3d9.dll" "$from/dxvk-kosmickrisp/LICENSE" "$kk" -d preview
+          echo "52d7b68364e19d744882533d663d69b898bfd294f4248b3313785ad801e23e58  preview/$kk" | shasum -a 256 -c
           to="$GITHUB_WORKSPACE/app/Sources/WoWSiliconSwift/Resources/Patching"
           cp "preview/$from/libSiliconPatch/wotlk/libSiliconPatch.dll" "$to/libSiliconPatch/wotlk/libSiliconPatch.dll"
           cp "preview/$from/DllLoader/libDllLdr.dll" "$to/winerosetta/libDllLdr.dll"
+          cp "preview/$from/dxvk-kosmickrisp/d3d9.dll" "preview/$from/dxvk-kosmickrisp/LICENSE" "$to/dxvk-kosmickrisp/"
           shasum -a 256 -c <<EOF
           76bcddae2fe04c407f197910c323731fa623763289254b319e03c0e3fb079565  $to/libSiliconPatch/wotlk/libSiliconPatch.dll
           f7ac6193767e092bd6c972cd6203a08bd969275a5c19df3e243b76a7c6007acd  $to/winerosetta/libDllLdr.dll
+          2a8f5f76a0332665623c96bef0669f5a8ca2de55297f76cf0fcb00951f1ddfab  $to/dxvk-kosmickrisp/d3d9.dll
+          a5cb1a6ded7d2d7e92d550ba28edd21be2d1d4044662b399887351023e30ce64  $to/dxvk-kosmickrisp/LICENSE
           EOF
           # The replacement for the lowpass DSP's coefficient update (0x8F2C70)
           # is hooked without the ECX-saving thunk the other replacements
@@ -121,6 +129,25 @@ jobs:
           tar -xJf mtld3d.tar.xz -C mtld3d
           cmp mtld3d/wine/aarch64-unix/mtld3d.so wine/wine/lib/wine/d3d9/mtld3d/aarch64-unix/mtld3d.so
           cp mtld3d/mtld3d.conf wine/wine/lib/mtld3d.conf
+      # The DXVK backend runs on the Vulkan driver the app finds as
+      # lib/vulkan/icd.d/KosmicKrisp_icd.json. Preview3.3.0's driver (signed by
+      # LunarG) goes beside it, not over the KosmicKrisp the bundle has in
+      # lib/external, which the rest of Wine's Vulkan keeps using. Like
+      # Preview3.3.0, no MoltenVK: in 3.2.2 it ran only the old D9VK 1.10.3.
+      - name: Add Preview3.3.0's KosmicKrisp for the DXVK backend
+        run: |
+          w="$RUNNER_TEMP/wine/wine/lib/vulkan"
+          mkdir -p "$w/icd.d"
+          cp "$RUNNER_TEMP/preview/WoWSilicon_3.3.0_Preview.app/Contents/Resources/Wine/lib/external/libvulkan_kosmickrisp.dylib" "$w/"
+          codesign --verify --strict --verbose "$w/libvulkan_kosmickrisp.dylib"
+          printf '%s\n' \
+            '{' \
+            '  "file_format_version": "1.0.1",' \
+            '  "ICD": {' \
+            '    "api_version": "1.4.0",' \
+            '    "library_path": "../libvulkan_kosmickrisp.dylib"' \
+            '  }' \
+            '}' > "$w/icd.d/KosmicKrisp_icd.json"
       # The app carries what runs games; headers, import and static libraries,
       # the SDK tools, man pages and Wine's graphics tests stay in the bundle
       # artifact.
@@ -159,6 +186,10 @@ jobs:
           cmp "$RUNNER_TEMP/preview/WoWSilicon_3.3.0_Preview.app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Contents/Resources/Patching/DllLoader/libDllLdr.dll" \
             "$app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Patching/winerosetta/libDllLdr.dll"
           echo "b112d83db4dda8c334b85bf7f4adfdddc5a58e478b15734a012f616dc78307c0  $app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Patching/libSiliconPatch/wotlk/libSiliconPatch.dll" | shasum -a 256 -c
+          echo "2a8f5f76a0332665623c96bef0669f5a8ca2de55297f76cf0fcb00951f1ddfab  $app/Contents/Resources/WoWSilicon-swift_WoWSiliconSwift.bundle/Patching/dxvk-kosmickrisp/d3d9.dll" | shasum -a 256 -c
+          vk="$app/Contents/Resources/Wine/lib/vulkan"
+          codesign --verify --strict --verbose "$vk/libvulkan_kosmickrisp.dylib"
+          test -f "$vk/icd.d/$(plutil -extract ICD.library_path raw -o - "$vk/icd.d/KosmicKrisp_icd.json")"
           tools/wine-runtime/validate.sh --runtime "$app/Contents/Resources/Wine"
       - name: Package
         run: |
