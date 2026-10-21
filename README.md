@@ -72,6 +72,14 @@ own `make bundle`, with `patches/app` and the icon in `app/icon.png`:
   wow_optimize entry first, and the Mods panel rewrote the file sorted,
   with `libSiliconPatch` before `winerosetta`.
 
+`libSiliconPatch` for 3.3.5a and `libDllLdr` come from WoWSilicon's
+`Preview3.3.0` release, which has no source, checked against the hashes in
+`app.yml`. That `libSiliconPatch` takes over functions of its own that
+wow_optimize then leaves alone (it checks their first bytes). `libDllLdr`
+also patches `DivxDecoder.dll`, and now extends `.text` over the entry
+point it adds. 3.3.0 has no `winerosetta` any more; 3.2.2's stays, since
+the app requires it.
+
 The app adds `lib/mtld3d.conf` to the bundle, which the patcher copies into
 the game and `bundle-wine.sh` does not install: from the mtld3d release the
 bundle's wine-build pins, after checking that its `mtld3d.so` is the one
