@@ -1,26 +1,31 @@
 diff --git a/dlls/winemac.drv/window.c b/dlls/winemac.drv/window.c
-index f38d576273..1713be7f66 100644
+index 83ca9f27a9..bd37ceb4a5 100644
 --- a/dlls/winemac.drv/window.c
 +++ b/dlls/winemac.drv/window.c
-@@ -1243,6 +1243,7 @@ static void macdrv_client_surface_update(struct client_surface *client)
+@@ -1652,6 +1652,7 @@ static void macdrv_client_surface_update(struct client_surface *client)
      HWND hwnd = client->hwnd, toplevel = client->toplevel, above_hwnd = NULL;
      WineContentView *above_view = NULL;
      struct macdrv_win_data *data;
 +    RECT rect = client->monitor_rect;
+     bool moved;
  
      TRACE("%s\n", debugstr_client_surface(client));
+@@ -1679,10 +1680,11 @@ static void macdrv_client_surface_update(struct client_surface *client)
  
-@@ -1267,7 +1268,8 @@ static void macdrv_client_surface_update(struct client_surface *client)
-         release_win_data(above_data);
-     }
+     /* DXMT updates its surface for every frame, so only a view that moves
+      * moves the client overlay. */
+-    moved = surface->presented && !EqualRect(&surface->view_rect, &client->monitor_rect);
+-    surface->view_rect = client->monitor_rect;
++    if (toplevel == hwnd) OffsetRect(&rect, -rect.left, -rect.top);
++    moved = surface->presented && !EqualRect(&surface->view_rect, &rect);
++    surface->view_rect = rect;
  
 -    macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(client->monitor_rect));
-+    if (toplevel == hwnd) OffsetRect(&rect, -rect.left, -rect.top);
 +    macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(rect));
      macdrv_set_view_superview(surface->cocoa_view, toplevel == hwnd ? NULL : data->client_view, data->cocoa_window,
                                above_view, NULL);
      release_win_data(data);
-@@ -1318,6 +1320,7 @@ struct macdrv_client_surface *impl_from_client_surface(struct client_surface *cl
+@@ -1745,6 +1747,7 @@ struct macdrv_client_surface *impl_from_client_surface(struct client_surface *cl
  struct client_surface *macdrv_CreateClientSurface(HWND hwnd, int pixel_format, BOOL raw)
  {
      struct macdrv_client_surface *surface;
@@ -28,7 +33,7 @@ index f38d576273..1713be7f66 100644
  
      surface = client_surface_create(&macdrv_client_surface_funcs, hwnd, pixel_format, raw);
  
-@@ -1325,7 +1328,9 @@ struct client_surface *macdrv_CreateClientSurface(HWND hwnd, int pixel_format, B
+@@ -1752,7 +1755,9 @@ struct client_surface *macdrv_CreateClientSurface(HWND hwnd, int pixel_format, B
      {
          struct macdrv_win_data *data;
  
