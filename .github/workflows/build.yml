@@ -15,20 +15,20 @@ on:
   workflow_dispatch:
     inputs:
       wine_build_ref:
-        description: athei/wine-build full commit SHA (or branch) whose scripts and pins build it
-        default: 200a84690fd4710b03b6a0e8f9c54956febb31df
+        description: athei/wine-build branch, tag or full commit SHA whose scripts and pins build it
+        default: main
         type: string
       wine_ref:
-        description: athei/wine ref to build instead of pins/wine-src.ref (empty for the pin)
+        description: athei/wine ref to build instead of pins/wine-src.ref (empty for the pin, a branch, so its newest commit)
         default: ""
         type: string
       fex_ref:
-        description: athei/FEX ref to build instead of pins/fex-src.ref (empty for the pin)
+        description: athei/FEX ref to build instead of pins/fex-src.ref (empty for the pin, a branch, so its newest commit)
         default: ""
         type: string
       loader_release:
-        description: athei/wine-build release whose signed wine.app is bundled
-        default: arm64-11.19-3
+        description: athei/wine-build release whose signed wine.app is bundled (empty for the latest)
+        default: ""
         type: string
 
 permissions:
@@ -128,6 +128,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE: ${{ inputs.loader_release }}
         run: |
+          [ -n "$RELEASE" ] || RELEASE=$(gh api repos/athei/wine-build/releases/latest --jq .tag_name)
+          echo "Loader from $RELEASE"
+          echo "LOADER_RELEASE=$RELEASE" >> "$GITHUB_ENV"
           asset="wine-$RELEASE-macos-arm64.tar.xz"
           digest=$(gh api "repos/athei/wine-build/releases/tags/$RELEASE" \
             --jq ".assets[] | select(.name == \"$asset\") | .digest")
@@ -201,7 +204,7 @@ jobs:
             echo "wine: athei/wine@$(git -C src rev-parse HEAD~$(ls ci/patches/wine/*.patch | wc -l | tr -d ' ')) + $(ls ci/patches/wine | tr '\n' ' ')"
             echo "wine-build: athei/wine-build@$(git -C scripts rev-parse "HEAD~$(( $(ls ci/patches/wine-build/*.patch | wc -l) + 1 ))") + $(ls ci/patches/wine-build | tr '\n' ' ')"
             echo "fex: athei/FEX@$FEX_BASE + $([ -d ci/patches/fex ] && ls ci/patches/fex | tr '\n' ' ')"
-            echo "loader: wine.app of athei/wine-build ${{ inputs.loader_release }}"
+            echo "loader: wine.app of athei/wine-build $LOADER_RELEASE"
             echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
             echo "sdk: $(xcrun --show-sdk-version)"
           } | tee "$RUNNER_TEMP/release/BUILD-INFO.txt"

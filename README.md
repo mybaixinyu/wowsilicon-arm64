@@ -117,7 +117,7 @@ certificate of the profile's team. That certificate is athei's, so the signed
 `LOADER_APP` to `bundle-wine.sh`: it compares the loader this build made with
 the app's, segment layout and every section's contents, refuses any
 difference, and then bundles the app with its signature unchanged. The
-loader's embedded `Info.plist` carries Wine's package version (`11.19`), so a
+loader's embedded `Info.plist` carries Wine's package version (`11.20`), so a
 Wine of another version needs a release of that version.
 
 ## Patches
@@ -141,8 +141,13 @@ gh workflow run build.yml --repo mybaixinyu/wowsilicon-arm64
 gh workflow run app.yml --repo mybaixinyu/wowsilicon-arm64 -f wine_run_id=<build.yml run>
 ```
 
-`wine_build_ref` defaults to a wine-build commit, whose pins name the rest;
-`loader_release` to the release whose `wine.app` matches its Wine. The
+By default every input builds the newest: `wine_build_ref` is wine-build's
+`main`, whose pins name the branches of Wine, FEX and the rest, and
+`loader_release` is wine-build's latest release. Give a commit to
+`wine_build_ref`, `wine_ref` or `fex_ref`, or a tag to `loader_release`, to
+build a particular version. The loader check fails the build when Wine's
+branch has moved past the latest release's loader, a new Wine version
+included; `wine_ref` set to the commit the release notes name builds it. The
 artifacts are `wowsilicon-arm64-<describe>` (above) and
 `app-wowsilicon-arm64-<version>-<commit>.tar.xz`, `WoWSilicon.app` with
 `BUILD-INFO.txt`.
