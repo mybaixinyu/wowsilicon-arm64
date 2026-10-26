@@ -160,8 +160,18 @@ jobs:
           xcode=$(xcodebuild -version | awk 'NR == 1 { print $2 }')
           llvm15=$(scripts/bin/ci/pins-key.sh LLVM15_)
           redist=$(scripts/bin/ci/pins-key.sh MTLD3D_ LLVM_MINGW_)
-          echo "llvm15=dxmt-llvm15-$LLVM15_GIT_COMMIT-floor$MACOS_FLOOR-xcode$xcode-$ImageOS-$llvm15" >> "$GITHUB_OUTPUT"
-          echo "redist=redist-$redist" >> "$GITHUB_OUTPUT"
+          {
+            echo "llvm15=dxmt-llvm15-$LLVM15_GIT_COMMIT-floor$MACOS_FLOOR-xcode$xcode-$ImageOS-$llvm15"
+            echo "redist=redist-$redist"
+            echo "ccache-prefix=ccache-$ImageOS-"
+            echo "ccache=ccache-$ImageOS-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+          # The compilers go through the ccache of the Homebrew formulae, as in release.yml.
+          {
+            echo "WINE_BUILD_CCACHE=$DEPS_PREFIX/bin/ccache"
+            echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
+            echo "CCACHE_MAXSIZE=3G"
+          } >> "$GITHUB_ENV"
       - name: Cache the pinned downloads
         uses: actions/cache@v6
         with:
@@ -180,14 +190,126 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: cargo-${{ hashFiles('scripts/compatdb/Cargo.lock') }}
+      # release.yml's caches: one per staged dist, keyed by the hash of the KEY
+      # line its build script would write now (--print-key: the commit, the
+      # script, the toolchain), so a dist whose inputs did not change is not
+      # rebuilt, and a rolling ccache for everything that is. FEX's key names
+      # the patched commit, which pins/fex-src.ref holds by now. A
+      # wine_build_ref older than --print-key gets no dist caches.
+      - name: Compute the dist cache keys
+        id: dists
+        run: |
+          for c in mesa gstreamer fex dxmt vkd3d-proton; do
+            key=$(scripts/bin/build-$c.sh --print-key) || { echo "$c: no --print-key"; continue; }
+            echo "$c: $key"
+            echo "${c%%-*}=dist-$c-$ImageOS-$(printf '%s\n' "$key" | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          done
+      - name: Restore Mesa's dist
+        id: mesa-dist
+        if: steps.dists.outputs.mesa != ''
+        uses: actions/cache/restore@v6
+        with:
+          path: build/mesa/dist
+          key: ${{ steps.dists.outputs.mesa }}
+      - name: Restore GStreamer's dist
+        id: gstreamer-dist
+        if: steps.dists.outputs.gstreamer != ''
+        uses: actions/cache/restore@v6
+        with:
+          path: build/gstreamer/dist
+          key: ${{ steps.dists.outputs.gstreamer }}
+      - name: Restore FEX's dist
+        id: fex-dist
+        if: steps.dists.outputs.fex != ''
+        uses: actions/cache/restore@v6
+        with:
+          path: build/fex/dist
+          key: ${{ steps.dists.outputs.fex }}
+      - name: Restore DXMT's dist
+        id: dxmt-dist
+        if: steps.dists.outputs.dxmt != ''
+        uses: actions/cache/restore@v6
+        with:
+          path: build/dxmt/dist
+          key: ${{ steps.dists.outputs.dxmt }}
+      - name: Restore vkd3d-proton's dist
+        id: vkd3d-dist
+        if: steps.dists.outputs.vkd3d != ''
+        uses: actions/cache/restore@v6
+        with:
+          path: build/vkd3d-proton/dist
+          key: ${{ steps.dists.outputs.vkd3d }}
       - name: Restore DXMT's LLVM
         id: llvm15-cache
         uses: actions/cache/restore@v6
         with:
           path: build/dxmt/llvm15
           key: ${{ steps.keys.outputs.llvm15 }}
+      - name: Restore the ccache directory
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ${{ steps.keys.outputs.ccache }}
+          restore-keys: ${{ steps.keys.outputs.ccache-prefix }}
+      # So that the statistics after the build are this run's.
+      - name: Reset the ccache statistics
+        run: '"$WINE_BUILD_CCACHE" --zero-stats'
+      # Without --clean, which would only delete the dists restored above; the
+      # scripts check those against their KEY themselves.
       - name: Build
-        run: scripts/bin/build-wine.sh --clean
+        id: build
+        run: scripts/bin/build-wine.sh
+      - name: Report the ccache statistics
+        if: always() && steps.build.conclusion != 'skipped'
+        run: '"$WINE_BUILD_CCACHE" --show-stats'
+      - name: Save the ccache directory
+        if: always() && steps.build.conclusion != 'skipped'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ${{ steps.keys.outputs.ccache }}
+      # The key each complete dist is saved under, from the KEY its build
+      # wrote; none for a dist that is missing or incomplete.
+      - name: Compute the dist save keys
+        id: saves
+        if: always() && steps.build.conclusion != 'skipped'
+        run: |
+          for c in mesa gstreamer fex dxmt vkd3d-proton; do
+            dist=build/$c/dist
+            if [ -f "$dist/COMMIT" ] && [ -f "$dist/KEY" ]; then
+              echo "${c%%-*}=dist-$c-$ImageOS-$(shasum -a 256 < "$dist/KEY" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+            fi
+          done
+      - name: Save Mesa's dist
+        if: always() && steps.saves.outputs.mesa != '' && (steps.mesa-dist.outputs.cache-hit != 'true' || steps.saves.outputs.mesa != steps.dists.outputs.mesa)
+        uses: actions/cache/save@v6
+        with:
+          path: build/mesa/dist
+          key: ${{ steps.saves.outputs.mesa }}
+      - name: Save GStreamer's dist
+        if: always() && steps.saves.outputs.gstreamer != '' && (steps.gstreamer-dist.outputs.cache-hit != 'true' || steps.saves.outputs.gstreamer != steps.dists.outputs.gstreamer)
+        uses: actions/cache/save@v6
+        with:
+          path: build/gstreamer/dist
+          key: ${{ steps.saves.outputs.gstreamer }}
+      - name: Save FEX's dist
+        if: always() && steps.saves.outputs.fex != '' && (steps.fex-dist.outputs.cache-hit != 'true' || steps.saves.outputs.fex != steps.dists.outputs.fex)
+        uses: actions/cache/save@v6
+        with:
+          path: build/fex/dist
+          key: ${{ steps.saves.outputs.fex }}
+      - name: Save DXMT's dist
+        if: always() && steps.saves.outputs.dxmt != '' && (steps.dxmt-dist.outputs.cache-hit != 'true' || steps.saves.outputs.dxmt != steps.dists.outputs.dxmt)
+        uses: actions/cache/save@v6
+        with:
+          path: build/dxmt/dist
+          key: ${{ steps.saves.outputs.dxmt }}
+      - name: Save vkd3d-proton's dist
+        if: always() && steps.saves.outputs.vkd3d != '' && (steps.vkd3d-dist.outputs.cache-hit != 'true' || steps.saves.outputs.vkd3d != steps.dists.outputs.vkd3d)
+        uses: actions/cache/save@v6
+        with:
+          path: build/vkd3d-proton/dist
+          key: ${{ steps.saves.outputs.vkd3d }}
       - name: Save DXMT's LLVM
         if: always() && steps.llvm15-cache.outputs.cache-hit != 'true' && hashFiles('build/dxmt/llvm15/COMMIT') != ''
         uses: actions/cache/save@v6
