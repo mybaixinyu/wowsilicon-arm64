@@ -91,9 +91,12 @@ jobs:
         run: |
           # A patch directory may be empty or absent.
           shopt -s nullglob
+          # The base commit's date, so the same patches give the same SHA: DXMT's dist cache key names Wine's HEAD.
           commit() {
             git -C "$1" add -A
-            git -C "$1" -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
+            date=$(git -C "$1" log -1 --format=%cI)
+            GIT_AUTHOR_DATE=$date GIT_COMMITTER_DATE=$date \
+              git -C "$1" -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
               commit --quiet -m "$2"
           }
           for p in "$GITHUB_WORKSPACE"/ci/patches/wine/*.patch; do
