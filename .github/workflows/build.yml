@@ -186,13 +186,14 @@ jobs:
           echo "MINGW_DIR=$HOME/llvm-mingw" >> "$GITHUB_ENV"
       - name: Add the Rust target
         run: rustup target add aarch64-apple-darwin
+      # Cargo.lock is at the root since mach9 41ceecac92 and in compatdb/ before it.
       - name: Cache the cargo registry
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-${{ hashFiles('scripts/compatdb/Cargo.lock') }}
+          key: cargo-${{ hashFiles('scripts/Cargo.lock', 'scripts/compatdb/Cargo.lock') }}
       # release.yml's caches: one per staged dist, keyed by the hash of the KEY
       # line its build script would write now (--print-key: the commit, the
       # script, the toolchain), so a dist whose inputs did not change is not
