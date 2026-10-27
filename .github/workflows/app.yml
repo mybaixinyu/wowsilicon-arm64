@@ -112,16 +112,16 @@ jobs:
       # The patcher copies lib/mtld3d.conf into the game. WoWSilicon's own
       # runtime takes it from the mtld3d release beside the DLLs; bundle-wine.sh
       # installs only the DLLs, so the file comes from the release the
-      # bundle's wine-build pins, checked against the mtld3d.so installed
+      # bundle's mach9 pins, checked against the mtld3d.so installed
       # (the PE files are stripped).
       - name: Add mtld3d.conf from the bundle's mtld3d release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd "$RUNNER_TEMP"
-          ref=$(sed -n 's|^wine-build: athei/wine-build@\([0-9a-f]\{40\}\) .*|\1|p' wine/BUILD-INFO.txt)
+          ref=$(sed -nE 's,^(wine-build|mach9): athei/(wine-build|mach9)@([0-9a-f]{40}) .*,\3,p' wine/BUILD-INFO.txt)
           [ -n "$ref" ]
-          gh api "repos/athei/wine-build/contents/pins/redist.env?ref=$ref" -H 'Accept: application/vnd.github.raw' > redist.env
+          gh api "repos/athei/mach9/contents/pins/redist.env?ref=$ref" -H 'Accept: application/vnd.github.raw' > redist.env
           . ./redist.env
           curl -fsSLo mtld3d.tar.xz "$MTLD3D_URL"
           echo "$MTLD3D_SHA256  mtld3d.tar.xz" | shasum -a 256 -c

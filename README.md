@@ -1,18 +1,19 @@
 # wowsilicon-arm64
 
 Builds [WoWSilicon](https://github.com/WoWSilicon/WoWSilicon) around the native
-arm64 Wine of [athei/wine-build](https://github.com/athei/wine-build), both
+arm64 Wine of [athei/mach9](https://github.com/athei/mach9) (formerly
+wine-build, the name `patches/wine-build` and `wine_build_ref` keep), both
 from source, with WoWSilicon's Wine patches on top, without waiting for a
 release of either.
 
-`build.yml` builds the bundle the way wine-build's own `release.yml` does:
+`build.yml` builds the bundle the way mach9's own `release.yml` does:
 the same layout, `bin/ci` scripts, Homebrew action, caches and
 `bundle-wine.sh --strict-floor --symbols`, then `package.sh`, on
 `macos-26`. On top of it:
 
-- Wine is the ref in wine-build's `pins/wine-src.ref` (or `wine_ref`), plus
+- Wine is the ref in mach9's `pins/wine-src.ref` (or `wine_ref`), plus
   `patches/wine`; FEX is the ref in `pins/fex-src.ref` (or `fex_ref`), plus
-  `patches/fex`. Mesa, DXMT, mtld3d and llvm-mingw are what wine-build pins.
+  `patches/fex`. Mesa, DXMT, mtld3d and llvm-mingw are what mach9 pins.
 - Each patch is committed, since `package.sh` names commits and refuses
   uncommitted changes.
 - The signed loader replaces `release.yml`'s signing step (below).
@@ -98,7 +99,7 @@ default.
 
 The app adds `lib/mtld3d.conf` to the bundle, which the patcher copies into
 the game and `bundle-wine.sh` does not install: from the mtld3d release the
-bundle's wine-build pins, after checking that its `mtld3d.so` is the one
+bundle's mach9 pins, after checking that its `mtld3d.so` is the one
 installed. The app leaves out what only building against Wine or testing it
 needs: `include`, the import and static libraries, the SDK tools in `bin`,
 the man pages and `lib/wine/tests`, about 150 MB. The bundle artifact keeps
@@ -112,7 +113,7 @@ paths the app passes are ignored by this Wine.
 The loader needs `com.apple.developer.cross-architecture-support`, which macOS
 honours only with a provisioning profile that grants it and a signature by a
 certificate of the profile's team. That certificate is athei's, so the signed
-`wine.app` is taken from a wine-build release (`loader_release`).
+`wine.app` is taken from a mach9 release (`loader_release`).
 `patches/wine-build/0001` adds
 `LOADER_APP` to `bundle-wine.sh`: it compares the loader this build made with
 the app's, segment layout and every section's contents, refuses any
@@ -141,9 +142,9 @@ gh workflow run build.yml --repo mybaixinyu/wowsilicon-arm64
 gh workflow run app.yml --repo mybaixinyu/wowsilicon-arm64 -f wine_run_id=<build.yml run>
 ```
 
-By default every input builds the newest: `wine_build_ref` is wine-build's
+By default every input builds the newest: `wine_build_ref` is mach9's
 `main`, whose pins name the branches of Wine, FEX and the rest, and
-`loader_release` is wine-build's latest release. Give a commit to
+`loader_release` is mach9's latest release. Give a commit to
 `wine_build_ref`, `wine_ref` or `fex_ref`, or a tag to `loader_release`, to
 build a particular version. The loader check fails the build when Wine's
 branch has moved past the latest release's loader, a new Wine version

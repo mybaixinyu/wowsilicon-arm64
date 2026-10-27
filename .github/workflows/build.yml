@@ -1,13 +1,13 @@
 name: build
 
-# The arm64 Wine bundle, built the way athei/wine-build's own release.yml
+# The arm64 Wine bundle, built the way athei/mach9's own release.yml
 # builds it (the same layout, scripts, flags, Homebrew action and caches),
 # with this repository's patches on top: patches/wine on athei/wine,
 # patches/fex on athei/FEX and patches/wine-build on the scripts, each
 # committed, since package.sh names commits and refuses uncommitted changes.
 # The one step that differs is signing: release.yml signs the loader with
 # the team's identity from its secrets, which this repository does not have,
-# so the signed wine.app comes from a wine-build release and bundle-wine.sh
+# so the signed wine.app comes from a mach9 release and bundle-wine.sh
 # refuses it unless the loader this build makes is the same code
 # (patches/wine-build/0001). app.yml then builds WoWSilicon.app around the
 # bundle. Manual only.
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       wine_build_ref:
-        description: athei/wine-build branch, tag or full commit SHA whose scripts and pins build it
+        description: athei/mach9 branch, tag or full commit SHA whose scripts and pins build it
         default: main
         type: string
       wine_ref:
@@ -27,7 +27,7 @@ on:
         default: ""
         type: string
       loader_release:
-        description: athei/wine-build release whose signed wine.app is bundled (empty for the latest)
+        description: athei/mach9 release whose signed wine.app is bundled (empty for the latest)
         default: ""
         type: string
 
@@ -54,7 +54,7 @@ jobs:
       # under build/ and the bundle in dist/.
       - uses: actions/checkout@v7
         with:
-          repository: athei/wine-build
+          repository: athei/mach9
           ref: ${{ inputs.wine_build_ref }}
           path: scripts
           persist-credentials: false
@@ -131,13 +131,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE: ${{ inputs.loader_release }}
         run: |
-          [ -n "$RELEASE" ] || RELEASE=$(gh api repos/athei/wine-build/releases/latest --jq .tag_name)
+          [ -n "$RELEASE" ] || RELEASE=$(gh api repos/athei/mach9/releases/latest --jq .tag_name)
           echo "Loader from $RELEASE"
           echo "LOADER_RELEASE=$RELEASE" >> "$GITHUB_ENV"
           asset="wine-$RELEASE-macos-arm64.tar.xz"
-          digest=$(gh api "repos/athei/wine-build/releases/tags/$RELEASE" \
+          digest=$(gh api "repos/athei/mach9/releases/tags/$RELEASE" \
             --jq ".assets[] | select(.name == \"$asset\") | .digest")
-          gh release download "$RELEASE" -R athei/wine-build -p "$asset" -D "$RUNNER_TEMP"
+          gh release download "$RELEASE" -R athei/mach9 -p "$asset" -D "$RUNNER_TEMP"
           echo "${digest#sha256:}  $RUNNER_TEMP/$asset" | shasum -a 256 -c
           mkdir "$RUNNER_TEMP/loader"
           tar -xJf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/loader" wine/lib/wine/aarch64-unix/wine.app
@@ -327,9 +327,9 @@ jobs:
           scripts/bin/ci/package.sh "$name" "$RUNNER_TEMP/release"
           {
             echo "wine: athei/wine@$(git -C src rev-parse HEAD~$(ls ci/patches/wine/*.patch | wc -l | tr -d ' ')) + $(ls ci/patches/wine | tr '\n' ' ')"
-            echo "wine-build: athei/wine-build@$(git -C scripts rev-parse "HEAD~$(( $(ls ci/patches/wine-build/*.patch | wc -l) + 1 ))") + $(ls ci/patches/wine-build | tr '\n' ' ')"
+            echo "mach9: athei/mach9@$(git -C scripts rev-parse "HEAD~$(( $(ls ci/patches/wine-build/*.patch | wc -l) + 1 ))") + $(ls ci/patches/wine-build | tr '\n' ' ')"
             echo "fex: athei/FEX@$FEX_BASE + $([ -d ci/patches/fex ] && ls ci/patches/fex | tr '\n' ' ')"
-            echo "loader: wine.app of athei/wine-build $LOADER_RELEASE"
+            echo "loader: wine.app of athei/mach9 $LOADER_RELEASE"
             echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
             echo "sdk: $(xcrun --show-sdk-version)"
           } | tee "$RUNNER_TEMP/release/BUILD-INFO.txt"

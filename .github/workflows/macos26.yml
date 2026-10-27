@@ -44,11 +44,11 @@ jobs:
         run: |
           codesign --verify --deep --strict --verbose "$APP"
           codesign --verify --strict --verbose "$APP/Contents/Resources/Wine/lib/wine/aarch64-unix/wine.app"
-      # wine-build's own check, smoke/dlopen.c: each library with every
+      # mach9's own check, smoke/dlopen.c: each library with every
       # dependency bound at once (RTLD_NOW), so a symbol macOS 26 lacks fails.
       - name: Load every library in lib/external
         run: |
-          curl -fsSL -o dlopen.c https://raw.githubusercontent.com/athei/wine-build/e1f8349a469eed4c9f18e660f74cb43d5808a620/smoke/dlopen.c
+          curl -fsSL -o dlopen.c https://raw.githubusercontent.com/athei/mach9/e1f8349a469eed4c9f18e660f74cb43d5808a620/smoke/dlopen.c
           clang -target arm64-apple-macos26.4 -o dlopen dlopen.c
           ext="$APP/Contents/Resources/Wine/lib/external"
           for f in "$ext"/*.dylib; do
