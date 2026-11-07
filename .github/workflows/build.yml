@@ -27,7 +27,7 @@ on:
         default: ""
         type: string
       loader_release:
-        description: athei/mach9 release whose signed wine.app is bundled (empty for the latest)
+        description: athei/mach9 release whose signed wine.app is bundled (empty for the newest one with a Wine bundle)
         default: ""
         type: string
 
@@ -131,7 +131,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE: ${{ inputs.loader_release }}
         run: |
-          [ -n "$RELEASE" ] || RELEASE=$(gh api repos/athei/mach9/releases/latest --jq .tag_name)
+          # The newest release that carries a Wine bundle: mach9 also publishes launcher
+          # releases (v0.1.0, a dmg), and those can be the repository's "latest".
+          [ -n "$RELEASE" ] || RELEASE=$(gh api 'repos/athei/mach9/releases?per_page=100' --jq '
+            [.[] | select((.draft or .prerelease) | not)
+                 | select(.tag_name as $t | any(.assets[]; .name == "wine-\($t)-macos-arm64.tar.xz"))]
+            | sort_by(.published_at) | last | .tag_name // empty')
+          if [ -z "$RELEASE" ]; then
+            echo "Error: no athei/mach9 release has a wine-<tag>-macos-arm64.tar.xz asset; pass loader_release."
+            exit 1
+          fi
           echo "Loader from $RELEASE"
           echo "LOADER_RELEASE=$RELEASE" >> "$GITHUB_ENV"
           asset="wine-$RELEASE-macos-arm64.tar.xz"
