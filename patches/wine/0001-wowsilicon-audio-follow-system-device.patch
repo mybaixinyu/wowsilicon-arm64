@@ -1,8 +1,8 @@
 diff --git a/dlls/dsound/dsound.c b/dlls/dsound/dsound.c
-index 8ff186f74a..7ab3d21f84 100644
+index 120bec003a..c34b4c919a 100644
 --- a/dlls/dsound/dsound.c
 +++ b/dlls/dsound/dsound.c
-@@ -41,6 +41,9 @@
+@@ -40,6 +40,9 @@
  
  WINE_DEFAULT_DEBUG_CHANNEL(dsound);
  
@@ -12,7 +12,7 @@ index 8ff186f74a..7ab3d21f84 100644
  typedef struct IDirectSoundImpl {
      IUnknown            IUnknown_inner;
      IDirectSound8       IDirectSound8_iface;
-@@ -193,6 +196,13 @@ static void DirectSoundDevice_destroy(DirectSoundDevice *device)
+@@ -191,6 +194,13 @@ static void DirectSoundDevice_destroy(DirectSoundDevice *device)
  
          TRACE("(%p)\n", device);
  
@@ -26,7 +26,7 @@ index 8ff186f74a..7ab3d21f84 100644
          InterlockedExchange(&device->terminated, TRUE);
          SetEvent(device->sleepev);
          if (device->thread) {
-@@ -240,6 +250,7 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
+@@ -239,6 +249,7 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
      GUID devGUID;
      DirectSoundDevice *device;
      IMMDevice *mmdevice;
@@ -34,7 +34,7 @@ index 8ff186f74a..7ab3d21f84 100644
  
      TRACE("(%p,%s)\n",ppDevice,debugstr_guid(lpcGUID));
  
-@@ -248,6 +259,9 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
+@@ -247,6 +258,9 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
          return DSERR_ALREADYINITIALIZED;
      }
  
@@ -44,7 +44,7 @@ index 8ff186f74a..7ab3d21f84 100644
      /* Default device? */
      if (!lpcGUID || IsEqualGUID(lpcGUID, &GUID_NULL))
          lpcGUID = &DSDEVID_DefaultPlayback;
-@@ -317,11 +331,54 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
+@@ -316,11 +330,54 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
      device->thread = CreateThread(0, 0, DSOUND_mixthread, device, 0, 0);
      SetThreadPriority(device->thread, THREAD_PRIORITY_TIME_CRITICAL);
  
@@ -221,10 +221,10 @@ index e2b9b81bee..17e7884306 100644
          GUID *guid)
  {
 diff --git a/dlls/dsound/dsound_private.h b/dlls/dsound/dsound_private.h
-index a913d7052d..f26cd42cca 100644
+index fc894b006d..9122a5f57a 100644
 --- a/dlls/dsound/dsound_private.h
 +++ b/dlls/dsound/dsound_private.h
-@@ -101,6 +101,8 @@ struct DirectSoundDevice
+@@ -96,6 +96,8 @@ struct DirectSoundDevice
      IAudioRenderClient *render;
  
      HANDLE sleepev, thread;
@@ -233,7 +233,7 @@ index a913d7052d..f26cd42cca 100644
  };
  
  /* reference counted buffer memory for duplicated buffer memory */
-@@ -204,6 +206,8 @@ HRESULT DSOUND_Create(REFIID riid, void **ppv);
+@@ -187,6 +189,8 @@ HRESULT DSOUND_Create(REFIID riid, void **ppv);
  HRESULT DSOUND_Create8(REFIID riid, void **ppv);
  HRESULT IDirectSoundImpl_Create(IUnknown *outer_unk, REFIID riid, void **ppv, BOOL has_ds8);
  void DSOUND_ParseSpeakerConfig(DirectSoundDevice *device);
@@ -243,10 +243,10 @@ index a913d7052d..f26cd42cca 100644
  /* primary.c */
  
 diff --git a/dlls/winecoreaudio.drv/coreaudio.c b/dlls/winecoreaudio.drv/coreaudio.c
-index 272557cb4b..0ae8c92d04 100644
+index a448b5eda3..777dbdfd53 100644
 --- a/dlls/winecoreaudio.drv/coreaudio.c
 +++ b/dlls/winecoreaudio.drv/coreaudio.c
-@@ -78,13 +78,36 @@
+@@ -78,14 +78,37 @@
  WINE_DEFAULT_DEBUG_CHANNEL(coreaudio);
  WINE_DECLARE_DEBUG_CHANNEL(winediag);
  
@@ -260,6 +260,7 @@ index 272557cb4b..0ae8c92d04 100644
  {
      os_unfair_lock lock;
      AudioComponentInstance unit;
+     AudioComponentInstance mixer_unit;
 +    AudioComponentInstance spatial_unit;
 +    AudioStreamBasicDescription spatial_output_desc;
 +    enum spatial_audio_mode spatial_mode;
@@ -283,8 +284,8 @@ index 272557cb4b..0ae8c92d04 100644
  
      EDataFlow flow;
      DWORD flags;
-@@ -367,6 +390,97 @@ static void silence_buffer(struct coreaudio_stream *stream, BYTE *buffer, UINT32
-         memset(buffer, 0, frames * stream->fmt->nBlockAlign);
+@@ -439,6 +462,151 @@ static void convert_to_canonical(const struct coreaudio_stream *stream, const BY
+     }
  }
  
 +enum night_sample_kind
@@ -338,9 +339,23 @@ index 272557cb4b..0ae8c92d04 100644
 +    }
 +}
 +
-+static void process_normalize_audio(struct coreaudio_stream *stream, BYTE *data, UINT32 frames)
++/* One frame of the compressor: follows the frame's peak with the envelope and
++ * moves the gain towards the compressed, made-up level. */
++static float normalize_next_gain(float peak, float *envelope, float gain, float attack, float release)
 +{
 +    const float threshold = 0.12f, ratio = 0.25f, makeup = 1.8f;
++    float target;
++
++    *envelope += (peak - *envelope) * (peak > *envelope ? attack : release);
++    target = *envelope > threshold
++        ? (threshold + (*envelope - threshold) * ratio) / *envelope
++        : 1.0f;
++    target *= makeup;
++    return gain + (target - gain) * (target < gain ? attack : release);
++}
++
++static void process_normalize_audio(struct coreaudio_stream *stream, BYTE *data, UINT32 frames)
++{
 +    enum night_sample_kind kind = get_night_sample_kind(stream->fmt);
 +    float envelope = stream->normalize_envelope;
 +    float gain = stream->normalize_gain > 0.0f ? stream->normalize_gain : 1.0f;
@@ -353,19 +368,14 @@ index 272557cb4b..0ae8c92d04 100644
 +
 +    for (frame = 0; frame < frames; ++frame)
 +    {
-+        float peak = 0.0f, target;
++        float peak = 0.0f;
 +        for (channel = 0; channel < channels; ++channel)
 +        {
 +            float sample = fabsf(read_night_sample(data, kind, frame * channels + channel));
 +            peak = max(peak, sample);
 +        }
 +
-+        envelope += (peak - envelope) * (peak > envelope ? attack : release);
-+        target = envelope > threshold
-+            ? (threshold + (envelope - threshold) * ratio) / envelope
-+            : 1.0f;
-+        target *= makeup;
-+        gain += (target - gain) * (target < gain ? attack : release);
++        gain = normalize_next_gain(peak, &envelope, gain, attack, release);
 +
 +        for (channel = 0; channel < channels; ++channel)
 +        {
@@ -378,20 +388,70 @@ index 272557cb4b..0ae8c92d04 100644
 +    stream->normalize_gain = gain;
 +}
 +
++/* process_normalize_audio for the mixer's input: one non-interleaved Float32
++ * buffer per channel, as convert_to_canonical writes them. */
++static void process_normalize_audio_planar(struct coreaudio_stream *stream, AudioBufferList *data,
++                                           UINT32 frames)
++{
++    static BOOL warned;
++    float envelope = stream->normalize_envelope;
++    float gain = stream->normalize_gain > 0.0f ? stream->normalize_gain : 1.0f;
++    float attack = min(1.0f, 1.0f / (0.005f * stream->fmt->nSamplesPerSec));
++    float release = min(1.0f, 1.0f / (0.25f * stream->fmt->nSamplesPerSec));
++    UINT32 channels = stream->fmt->nChannels;
++    UINT32 frame, channel;
++
++    for (channel = 0; channel < channels && channel < data->mNumberBuffers; ++channel)
++        if (data->mBuffers[channel].mNumberChannels != 1 ||
++            data->mBuffers[channel].mDataByteSize < frames * sizeof(float))
++            break;
++    if (data->mNumberBuffers != channels || channel != channels)
++    {
++        if (!warned)
++            WARN("Normalize Audio skipped: %u mixer buffers for %u channels\n",
++                 (unsigned int)data->mNumberBuffers, channels);
++        warned = TRUE;
++        return;
++    }
++
++    for (frame = 0; frame < frames; ++frame)
++    {
++        float peak = 0.0f;
++        for (channel = 0; channel < channels; ++channel)
++            peak = max(peak, fabsf(((float *)data->mBuffers[channel].mData)[frame]));
++
++        gain = normalize_next_gain(peak, &envelope, gain, attack, release);
++
++        for (channel = 0; channel < channels; ++channel)
++        {
++            float *sample = (float *)data->mBuffers[channel].mData + frame;
++            *sample = max(-1.0f, min(1.0f, *sample * gain));
++        }
++    }
++
++    stream->normalize_envelope = envelope;
++    stream->normalize_gain = gain;
++}
++
  /* CA is pulling data from us */
  static OSStatus ca_render_cb(void *user, AudioUnitRenderActionFlags *flags,
          const AudioTimeStamp *ts, UInt32 bus, UInt32 nframes,
-@@ -399,6 +513,9 @@ static OSStatus ca_render_cb(void *user, AudioUnitRenderActionFlags *flags,
+@@ -480,6 +648,14 @@ static OSStatus ca_render_cb(void *user, AudioUnitRenderActionFlags *flags,
      if(nframes > to_copy_frames)
-         silence_buffer(stream, ((BYTE *)data->mBuffers[0].mData) + to_copy_bytes, nframes - to_copy_frames);
+         ca_silence_buffer(data, stream, to_copy_frames, nframes - to_copy_frames);
  
 +    if (stream->normalize_audio)
-+        process_normalize_audio(stream, data->mBuffers[0].mData, nframes);
++    {
++        if (stream->mixer_unit)
++            process_normalize_audio_planar(stream, data, nframes);
++        else
++            process_normalize_audio(stream, data->mBuffers[0].mData, nframes);
++    }
 +
      os_unfair_lock_unlock(&stream->lock);
  
      return noErr;
-@@ -533,6 +650,33 @@ static AudioComponentInstance get_audiounit(EDataFlow dataflow, AudioDeviceID ad
+@@ -614,6 +790,33 @@ static AudioComponentInstance get_audiounit(EDataFlow dataflow, AudioDeviceID ad
      return unit;
  }
  
@@ -425,7 +485,7 @@ index 272557cb4b..0ae8c92d04 100644
  static void dump_adesc(const char *aux, AudioStreamBasicDescription *desc)
  {
      TRACE("%s: mSampleRate: %f\n", aux, desc->mSampleRate);
-@@ -669,6 +813,260 @@ static HRESULT ca_setup_audiounit(EDataFlow dataflow, AudioComponentInstance uni
+@@ -1151,6 +1354,260 @@ mixer_failed:
      return S_OK;
  }
  
@@ -683,10 +743,10 @@ index 272557cb4b..0ae8c92d04 100644
 +    return FALSE;
 +}
 +
- static AudioDeviceID dev_id_from_device(const char *device)
- {
-     AudioDeviceID id;
-@@ -788,6 +1186,99 @@ static HRESULT get_device_sample_rate(AudioDeviceID dev_id, EDataFlow flow,
+ static HRESULT get_device_period_frame_range(AudioDeviceID dev_id, EDataFlow flow,
+                                              unsigned int *min_period_frames,
+                                              unsigned int *max_period_frames)
+@@ -1241,6 +1698,99 @@ static HRESULT get_device_sample_rate(AudioDeviceID dev_id, EDataFlow flow,
      return S_OK;
  }
  
@@ -786,7 +846,7 @@ index 272557cb4b..0ae8c92d04 100644
  static NTSTATUS unix_create_stream(void *args)
  {
      struct create_stream_params *params = args;
-@@ -817,10 +1308,16 @@ static NTSTATUS unix_create_stream(void *args)
+@@ -1270,10 +1820,16 @@ static NTSTATUS unix_create_stream(void *args)
          goto end;
      }
  
@@ -804,30 +864,31 @@ index 272557cb4b..0ae8c92d04 100644
  
      if (FAILED(params->result = get_device_period_frame_range(stream->dev_id, stream->flow,
                                                                &min_period_frames,
-@@ -850,7 +1347,7 @@ static NTSTATUS unix_create_stream(void *args)
-         sc = AudioUnitSetProperty(stream->unit, kAudioOutputUnitProperty_SetInputCallback,
+@@ -1306,7 +1862,9 @@ static NTSTATUS unix_create_stream(void *args)
                                    kAudioUnitScope_Output, 1, &input, sizeof(input));
      }else{
+         AudioComponentInstance input_unit = stream->mixer_unit ? stream->mixer_unit : stream->unit;
 -        input.inputProc = ca_render_cb;
-+        input.inputProc = ca_setup_spatial_audiounit(stream) ? ca_spatial_render_cb : ca_render_cb;
-         sc = AudioUnitSetProperty(stream->unit, kAudioUnitProperty_SetRenderCallback,
++        /* The spatial unit takes stereo streams only and the mixer only wider ones. */
++        input.inputProc = !stream->mixer_unit && ca_setup_spatial_audiounit(stream)
++                ? ca_spatial_render_cb : ca_render_cb;
+         sc = AudioUnitSetProperty(input_unit, kAudioUnitProperty_SetRenderCallback,
                                    kAudioUnitScope_Input, 0, &input, sizeof(input));
      }
-@@ -908,7 +1405,10 @@ static NTSTATUS unix_create_stream(void *args)
- end:
-     if(FAILED(params->result)){
+@@ -1366,6 +1924,9 @@ end:
          if(stream->converter) AudioConverterDispose(stream->converter);
-+        if(stream->spatial_unit) AudioComponentInstanceDispose(stream->spatial_unit);
          if(stream->unit) AudioComponentInstanceDispose(stream->unit);
+         if(stream->mixer_unit) AudioComponentInstanceDispose(stream->mixer_unit);
++        if(stream->spatial_unit) AudioComponentInstanceDispose(stream->spatial_unit);
 +        free(stream->spatial_control_path);
 +        free(stream->normalize_control_path);
          free(stream->fmt);
          free(stream);
      } else {
-@@ -936,6 +1436,10 @@ static NTSTATUS unix_release_stream( void *args )
-         AudioComponentInstanceDispose(stream->unit);
+@@ -1394,6 +1955,10 @@ static NTSTATUS unix_release_stream( void *args )
      }
  
+     if(stream->mixer_unit) AudioComponentInstanceDispose(stream->mixer_unit);
 +    if(stream->spatial_unit) AudioComponentInstanceDispose(stream->spatial_unit);
 +    free(stream->spatial_control_path);
 +    free(stream->normalize_control_path);
@@ -835,7 +896,7 @@ index 272557cb4b..0ae8c92d04 100644
      if(stream->converter) AudioConverterDispose(stream->converter);
      free(stream->resamp_buffer);
      free(stream->wrap_buffer);
-@@ -1470,6 +1974,161 @@ static NTSTATUS unix_get_current_padding(void *args)
+@@ -1720,6 +2285,177 @@ static NTSTATUS unix_get_current_padding(void *args)
      return STATUS_SUCCESS;
  }
  
@@ -843,7 +904,7 @@ index 272557cb4b..0ae8c92d04 100644
 +{
 +    AudioStreamBasicDescription new_desc, old_desc;
 +    AudioConverterRef new_converter = NULL, old_converter;
-+    AudioComponentInstance new_unit, old_unit;
++    AudioComponentInstance new_unit, old_unit, new_mixer = NULL, old_mixer;
 +    AURenderCallbackStruct input;
 +    AudioDeviceID new_id, old_id;
 +    BYTE *new_buffer = NULL, *old_buffer;
@@ -889,7 +950,9 @@ index 272557cb4b..0ae8c92d04 100644
 +    }
 +
 +    if (!(new_unit = get_audiounit(stream->flow, new_id))) return;
-+    hr = ca_setup_audiounit(stream->flow, new_unit, stream->fmt, &new_desc, &new_converter);
++    /* The new device decides whether the stream needs a mixer, as in unix_create_stream. */
++    hr = ca_setup_audiounit(new_id, stream->flow, stream->share, new_unit, stream->fmt,
++                            &new_desc, &new_mixer, &new_converter);
 +    if (FAILED(hr)) goto failed;
 +
 +    input.inputProcRefCon = stream;
@@ -909,7 +972,9 @@ index 272557cb4b..0ae8c92d04 100644
 +    }
 +    else
 +    {
-+        if (stream->spatial_unit)
++        AudioComponentInstance input_unit = new_mixer ? new_mixer : new_unit;
++
++        if (stream->spatial_unit && !new_mixer)
 +        {
 +            sc = AudioUnitSetProperty(new_unit, kAudioUnitProperty_StreamFormat,
 +                                      kAudioUnitScope_Input, 0, &stream->spatial_output_desc,
@@ -918,7 +983,7 @@ index 272557cb4b..0ae8c92d04 100644
 +            input.inputProc = ca_spatial_render_cb;
 +        }
 +        else input.inputProc = ca_render_cb;
-+        sc = AudioUnitSetProperty(new_unit, kAudioUnitProperty_SetRenderCallback,
++        sc = AudioUnitSetProperty(input_unit, kAudioUnitProperty_SetRenderCallback,
 +                                  kAudioUnitScope_Input, 0, &input, sizeof(input));
 +        if (sc != noErr) goto failed;
 +    }
@@ -927,6 +992,7 @@ index 272557cb4b..0ae8c92d04 100644
 +    if (sc != noErr) goto failed;
 +
 +    old_unit = stream->unit;
++    old_mixer = stream->mixer_unit;
 +    old_id = stream->dev_id;
 +    old_desc = stream->dev_desc;
 +    old_converter = stream->converter;
@@ -936,7 +1002,11 @@ index 272557cb4b..0ae8c92d04 100644
 +    old_held = stream->cap_held_frames;
 +
 +    AudioOutputUnitStop(old_unit);
++    /* ca_render_cb reads mixer_unit under the lock to choose the buffer layout. Never
++     * held across AudioOutputUnitStop or Start, which can wait for a callback. */
++    os_unfair_lock_lock(&stream->lock);
 +    stream->unit = new_unit;
++    stream->mixer_unit = new_mixer;
 +    stream->dev_id = new_id;
 +    stream->dev_desc = new_desc;
 +    if (stream->flow == eCapture)
@@ -946,11 +1016,14 @@ index 272557cb4b..0ae8c92d04 100644
 +        stream->cap_bufsize_frames = new_frames;
 +        stream->cap_offs_frames = stream->cap_held_frames = 0;
 +    }
++    os_unfair_lock_unlock(&stream->lock);
 +
 +    sc = AudioOutputUnitStart(new_unit);
 +    if (sc != noErr)
 +    {
++        os_unfair_lock_lock(&stream->lock);
 +        stream->unit = old_unit;
++        stream->mixer_unit = old_mixer;
 +        stream->dev_id = old_id;
 +        stream->dev_desc = old_desc;
 +        if (stream->flow == eCapture)
@@ -961,11 +1034,14 @@ index 272557cb4b..0ae8c92d04 100644
 +            stream->cap_offs_frames = old_offset;
 +            stream->cap_held_frames = old_held;
 +        }
++        os_unfair_lock_unlock(&stream->lock);
 +        AudioOutputUnitStart(old_unit);
 +        goto failed;
 +    }
 +
++    /* The output unit first, as unix_release_stream does: it pulls from the mixer. */
 +    AudioComponentInstanceDispose(old_unit);
++    if (old_mixer) AudioComponentInstanceDispose(old_mixer);
 +    if (stream->flow == eCapture)
 +    {
 +        if (old_converter) AudioConverterDispose(old_converter);
@@ -992,12 +1068,13 @@ index 272557cb4b..0ae8c92d04 100644
 +    if (new_converter && new_converter != stream->converter) AudioConverterDispose(new_converter);
 +    if (new_buffer && new_buffer != stream->cap_buffer) free(new_buffer);
 +    AudioComponentInstanceDispose(new_unit);
++    if (new_mixer) AudioComponentInstanceDispose(new_mixer);
 +}
 +
  static void unix_timer_loop(void *args)
  {
      struct coreaudio_stream *stream = args;
-@@ -1481,6 +2140,28 @@ static void unix_timer_loop(void *args)
+@@ -1731,6 +2467,28 @@ static void unix_timer_loop(void *args)
      next.QuadPart = last.QuadPart + stream->period;
  
      while(!stream->please_quit){

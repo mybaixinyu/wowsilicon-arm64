@@ -118,8 +118,9 @@ certificate of the profile's team. That certificate is athei's, so the signed
 `LOADER_APP` to `bundle-wine.sh`: it compares the loader this build made with
 the app's, segment layout and every section's contents, refuses any
 difference, and then bundles the app with its signature unchanged. The
-loader's embedded `Info.plist` carries Wine's package version (`11.20`), so a
-Wine of another version needs a release of that version.
+loader's embedded `Info.plist` carries no Wine version (`CFBundleVersion` is
+`0` in `arm64-11.20-5` and `v0.2.0`), so what decides is the loader's
+source: a Wine whose loader builds differently needs a release built from it.
 
 ## Patches
 
@@ -130,6 +131,12 @@ the ones left out and why, is in
 `athei/wine` has since taken `0005` (GCMouse raw input, on through compatdb's
 `gcmouse` rule), `0007` (the input method window) and `0008` (the
 presentation options while inactive), so they are gone here.
+`0001` is ported onto Wine 11.21, whose winecoreaudio puts a SpatialMixer
+(`mixer_unit`) before the output unit to downmix streams wider than stereo
+whose channel mask the device lacks. WoWSilicon's spatial unit takes stereo
+streams only, so a stream gets one of the two, never both; Normalize Audio
+has a planar path for the mixer's Float32 input, and following the system
+device builds, swaps and disposes the mixer with the output unit.
 `0009` is CrossOver's Mac Edit menu ("CW HACK 10912", WineAndAqua/wine
 `aa34ecbe71`), which the Wine that WoWSilicon ships is built from and
 `athei/wine` is not: Command-C/V/X/A/Z reach the program as Control-C/V/X/A/Z
@@ -144,11 +151,11 @@ gh workflow run app.yml --repo mybaixinyu/wowsilicon-arm64 -f wine_run_id=<build
 
 By default every input builds the newest: `wine_build_ref` is mach9's
 `main`, whose pins name the branches of Wine, FEX and the rest, and
-`loader_release` is mach9's latest release. Give a commit to
-`wine_build_ref`, `wine_ref` or `fex_ref`, or a tag to `loader_release`, to
-build a particular version. The loader check fails the build when Wine's
-branch has moved past the latest release's loader, a new Wine version
-included; `wine_ref` set to the commit the release notes name builds it. The
+`loader_release` is mach9's newest release with a Wine bundle. Give a commit
+to `wine_build_ref`, `wine_ref` or `fex_ref`, or a tag to `loader_release`,
+to build a particular version. The loader check fails the build when Wine's
+branch builds a loader other than that release's; `wine_ref` set to the
+commit the release notes name builds it. The
 artifacts are `wowsilicon-arm64-<describe>` (above) and
 `app-wowsilicon-arm64-<version>-<commit>.tar.xz`, `WoWSilicon.app` with
 `BUILD-INFO.txt`.
