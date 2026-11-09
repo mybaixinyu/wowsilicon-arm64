@@ -99,6 +99,7 @@ jobs:
               git -C "$1" -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
               commit --quiet -m "$2"
           }
+          echo "WINE_BASE=$(git -C src rev-parse HEAD)" >> "$GITHUB_ENV"
           for p in "$GITHUB_WORKSPACE"/ci/patches/wine/*.patch; do
             git -C src apply --verbose "$p"
             commit src "$(basename "$p" .patch)"
@@ -160,6 +161,35 @@ jobs:
           if [ "$want" != "$have" ]; then
             echo "Error: $RELEASE's loader was linked with the macOS $want SDK, this runner's Xcode has $have."
             exit 1
+          fi
+          # The Info.plist linked into the loader (loader/wine_info.plist.in) names the
+          # Wine version, the one thing a release built for another Wine differs in when
+          # the loader's source is the same. The release's version goes into the
+          # template, so the comparison still holds every other byte to the release's.
+          info="$RUNNER_TEMP/loader-info.plist"
+          otool -X -s __TEXT __info_plist "$app/Contents/MacOS/wine" |
+            perl -ne 's/^\S+\t//; print map { length == 8 ? pack("V", hex) : pack("C", hex) } split' > "$info"
+          version=$(plutil -extract CFBundleVersion raw -o - "$info")
+          short=$(plutil -extract CFBundleShortVersionString raw -o - "$info")
+          wine=$(sed -n 's/^Wine version //p' src/VERSION)
+          template=src/loader/wine_info.plist.in
+          if [ -z "$version" ] || [ "$version" != "$short" ] || [ -z "$wine" ]; then
+            echo "Error: $RELEASE's loader names Wine '$version' and '$short', the source '$wine'."
+            exit 1
+          fi
+          if [ "$version" != "$wine" ]; then
+            if [ "$(grep -c '@PACKAGE_VERSION@' "$template")" != 2 ]; then
+              echo "Error: $template no longer names @PACKAGE_VERSION@ twice:"
+              cat "$template"
+              exit 1
+            fi
+            sed -i '' "s/@PACKAGE_VERSION@/$version/g" "$template"
+            date=$(git -C src log -1 --format=%cI)
+            GIT_AUTHOR_DATE=$date GIT_COMMITTER_DATE=$date \
+              git -C src -c user.name=wowsilicon-arm64 -c user.email=wowsilicon-arm64@users.noreply.github.com \
+              commit --quiet -m "Name Wine $version in the loader's Info.plist, as $RELEASE's loader does" loader/wine_info.plist.in
+            echo "Wine $wine, $RELEASE's loader names $version: the loader's Info.plist names $version"
+            echo "LOADER_VERSION=$version" >> "$GITHUB_ENV"
           fi
           echo "LOADER_APP=$app" >> "$GITHUB_ENV"
       - name: Install the Homebrew formulae
@@ -336,10 +366,10 @@ jobs:
           name="wowsilicon-arm64-$(git -C src describe --tags --always)"
           scripts/bin/ci/package.sh "$name" "$RUNNER_TEMP/release"
           {
-            echo "wine: athei/wine@$(git -C src rev-parse HEAD~$(ls ci/patches/wine/*.patch | wc -l | tr -d ' ')) + $(ls ci/patches/wine | tr '\n' ' ')"
+            echo "wine: athei/wine@$WINE_BASE + $(ls ci/patches/wine | tr '\n' ' ')${LOADER_VERSION:++ the loader's Info.plist naming $LOADER_VERSION}"
             echo "mach9: athei/mach9@$(git -C scripts rev-parse "HEAD~$(( $(ls ci/patches/wine-build/*.patch | wc -l) + 1 ))") + $(ls ci/patches/wine-build | tr '\n' ' ')"
             echo "fex: athei/FEX@$FEX_BASE + $([ -d ci/patches/fex ] && ls ci/patches/fex | tr '\n' ' ')"
-            echo "loader: wine.app of athei/mach9 $LOADER_RELEASE"
+            echo "loader: wine.app of athei/mach9 $LOADER_RELEASE${LOADER_VERSION:+ (Wine $LOADER_VERSION)}"
             echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
             echo "sdk: $(xcrun --show-sdk-version)"
           } | tee "$RUNNER_TEMP/release/BUILD-INFO.txt"

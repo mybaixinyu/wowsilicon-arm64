@@ -118,9 +118,14 @@ certificate of the profile's team. That certificate is athei's, so the signed
 `LOADER_APP` to `bundle-wine.sh`: it compares the loader this build made with
 the app's, segment layout and every section's contents, refuses any
 difference, and then bundles the app with its signature unchanged. The
-loader's embedded `Info.plist` carries no Wine version (`CFBundleVersion` is
-`0` in `arm64-11.20-5` and `v0.2.0`), so what decides is the loader's
-source: a Wine whose loader builds differently needs a release built from it.
+`Info.plist` linked into the loader (`__TEXT,__info_plist`, from
+`loader/wine_info.plist.in`) names Wine's version (`CFBundleShortVersionString`
+and `CFBundleVersion`, `11.20` in `v0.2.0`; the bundle's own `Info.plist`
+says `0`), so a release built for another Wine differs in those two strings
+even when the loader's source is the same. `build.yml` writes the release's
+version into the template, in a commit of its own that `BUILD-INFO.txt`
+names, before building; every other byte is still compared, so a Wine whose
+loader source changed needs a release built from it.
 
 ## Patches
 
