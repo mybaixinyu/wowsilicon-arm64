@@ -366,7 +366,7 @@ jobs:
           name="wowsilicon-arm64-$(git -C src describe --tags --always)"
           scripts/bin/ci/package.sh "$name" "$RUNNER_TEMP/release"
           {
-            echo "wine: athei/wine@$WINE_BASE + $(ls ci/patches/wine | tr '\n' ' ')${LOADER_VERSION:++ the loader's Info.plist naming $LOADER_VERSION}"
+            echo "wine: athei/wine@$WINE_BASE + $(ls ci/patches/wine | tr '\n' ' ')${LOADER_VERSION:++ loader/wine_info.plist.in naming $LOADER_VERSION}"
             echo "mach9: athei/mach9@$(git -C scripts rev-parse "HEAD~$(( $(ls ci/patches/wine-build/*.patch | wc -l) + 1 ))") + $(ls ci/patches/wine-build | tr '\n' ' ')"
             echo "fex: athei/FEX@$FEX_BASE + $([ -d ci/patches/fex ] && ls ci/patches/fex | tr '\n' ' ')"
             echo "loader: wine.app of athei/mach9 $LOADER_RELEASE${LOADER_VERSION:+ (Wine $LOADER_VERSION)}"
