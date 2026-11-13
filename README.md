@@ -19,9 +19,11 @@ the same layout, `bin/ci` scripts, Homebrew action, caches and
 - The signed loader replaces `release.yml`'s signing step (below).
 
 The artifact holds the bundle tarball, its SHA-256, `package.sh`'s
-`notes.md` (what everything was built from, the Homebrew library versions
-included) and `BUILD-INFO.txt` (this repository's patches); the symbols are
-a separate artifact.
+`notes.md` (what everything was built from) and `BUILD-INFO.txt` (this
+repository's patches, the full commits of Mesa, DXMT, vkd3d-proton and
+GStreamer, and the Homebrew formulae at the versions the brew action's
+manifest names, which `notes.md` leaves out); the symbols are a separate
+artifact.
 
 ## FEX
 

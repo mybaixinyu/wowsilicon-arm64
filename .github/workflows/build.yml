@@ -365,13 +365,29 @@ jobs:
         run: |
           name="wowsilicon-arm64-$(git -C src describe --tags --always)"
           scripts/bin/ci/package.sh "$name" "$RUNNER_TEMP/release"
+          # The commits package.sh's notes name, in full, and the Homebrew
+          # formulae as the brew action's manifest has them (brew.sh checks
+          # every one is installed at that version).
+          SCRIPT_DIR=scripts/bin . scripts/bin/lib/profile.sh
+          . scripts/pins/redist.env
+          mesa=$(cat "$MESA_DIST/COMMIT")
+          dxmt=$(cat "$DXMT_DIST/COMMIT")
+          vkd3d=$(cat "$VKD3D_PROTON_DIST/COMMIT")
+          gstreamer=$(cat "$GSTREAMER_DIST/COMMIT")
+          brew=$(awk 'NF { print "brew: " $1 " " $2 }' "$RUNNER_TEMP/brew-manifest")
+          [ -n "$brew" ]
           {
             echo "wine: athei/wine@$WINE_BASE + $(ls ci/patches/wine | tr '\n' ' ')${LOADER_VERSION:++ loader/wine_info.plist.in naming $LOADER_VERSION}"
             echo "mach9: athei/mach9@$(git -C scripts rev-parse "HEAD~$(( $(ls ci/patches/wine-build/*.patch | wc -l) + 1 ))") + $(ls ci/patches/wine-build | tr '\n' ' ')"
             echo "fex: athei/FEX@$FEX_BASE + $([ -d ci/patches/fex ] && ls ci/patches/fex | tr '\n' ' ')"
+            echo "mesa: ${MESA_REPO#https://github.com/}@$mesa ($MESA_REF)"
+            echo "dxmt: ${DXMT_REPO#https://github.com/}@$dxmt ($DXMT_REF)"
+            echo "vkd3d-proton: ${VKD3D_PROTON_REPO#https://github.com/}@$vkd3d ($VKD3D_PROTON_REF)"
+            echo "gstreamer: ${GSTREAMER_GIT_URL#https://github.com/}@$gstreamer ($GSTREAMER_GIT_TAG)"
             echo "loader: wine.app of athei/mach9 $LOADER_RELEASE${LOADER_VERSION:+ (Wine $LOADER_VERSION)}"
             echo "repo: $GITHUB_REPOSITORY@$GITHUB_SHA"
             echo "sdk: $(xcrun --show-sdk-version)"
+            echo "$brew"
           } | tee "$RUNNER_TEMP/release/BUILD-INFO.txt"
           cat "$RUNNER_TEMP/release/notes.md"
           (cd "$RUNNER_TEMP/release" && shasum -a 256 "wine-$name-macos-arm64.tar.xz" | tee "wine-$name-macos-arm64.tar.xz.sha256")
